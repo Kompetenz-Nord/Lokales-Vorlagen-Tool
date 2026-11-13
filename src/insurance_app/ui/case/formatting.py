@@ -99,6 +99,7 @@ ACTION_LABELS: dict[str, str] = {
     "not_applicable": "Als nicht relevant markiert",
     "reset": "Zurückgesetzt",
     "template_selected": "Vorlage gewählt",
+    "template_version_removed": "Verwendete Vorlagenversion wurde im Vorlagen-Studio entfernt",
     "export": "PDF erzeugt",
     "archived": "Vorgang archiviert",
     "unarchived": "Vorgang wiederhergestellt",

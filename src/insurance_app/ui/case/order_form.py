@@ -40,6 +40,21 @@ from .formatting import FORMAT_HINTS, edit_text, severity_color, severity_symbol
 LEGAL_TEXT = "⚖ rechtlich relevant – bitte bewusst entscheiden"
 WAIVE_REFUND_WARNING = "Achtung: Ein Kreuz bedeutet KEINE Rückerstattung"
 HINT_LABEL = "prüfbedürftiger Hinweis"
+REQUIRED_TEXT = "✱ Pflichtangabe"
+REQUIRED_TOOLTIP = (
+    "Diese Angabe braucht die gewählte Vorlage. Solange sie fehlt, kann die PDF nicht erzeugt werden."
+)
+CONDITIONAL_TEXT = "◐ Pflichtangabe je nach Auswahl"
+CONDITIONAL_TOOLTIP = (
+    "Diese Angabe braucht die Vorlage nur bei bestimmten Entscheidungen. "
+    "Im Moment blockiert sie die PDF-Erzeugung nicht."
+)
+OPTIONAL_TEXT = "○ optional"
+OPTIONAL_TOOLTIP = (
+    "Diese Angabe darf leer bleiben. Die PDF kann auch ohne sie erzeugt werden; "
+    "mit „nicht relevant“ lassen Sie das Feld bewusst leer."
+)
+BLOCKING_TEXT = "✖ fehlt noch – ohne diese Angabe kann die PDF nicht erzeugt werden"
 
 # Empfängerangaben, die jeder Brief braucht (nicht „nicht relevant“ anbieten)
 LETTER_REQUIRED_BASE = {
@@ -106,6 +121,8 @@ class _Row:
     radios: dict[str, QRadioButton] = field(default_factory=dict)
     na_btn: QPushButton | None = None
     clear_btn: QPushButton | None = None
+    requirement: QLabel | None = None
+    optional: bool = False
 
 
 class OrderForm(QScrollArea):
@@ -128,6 +145,8 @@ class OrderForm(QScrollArea):
         self._signature: tuple | None = None
         self.copy_btn: QPushButton | None = None
         self.hints_box: QVBoxLayout | None = None
+        self._blocking: set[str] = set()
+        self._blocking_known = False  # erst nach ``sync(..., blocking)`` aus dem Prüfstatus
         self.build(None, [], None, set())
 
     # ------------------------------------------------------------------
@@ -216,6 +235,9 @@ class OrderForm(QScrollArea):
         head.setWordWrap(True)
         head.setStyleSheet("font-weight: 600;")
         lay.addWidget(head)
+        requirement = QLabel("")
+        requirement.setObjectName("requirement")
+        lay.addWidget(requirement)
         if fdef.legal_relevant:
             legal = QLabel(LEGAL_TEXT)
             legal.setStyleSheet(f"color: {theme.WARN};")
@@ -231,6 +253,9 @@ class OrderForm(QScrollArea):
             lay.addWidget(muted(fdef.help))
 
         row = _Row(key=key, frame=frame, status=QLabel(""), error=QLabel(""))
+        row.requirement = requirement
+        row.optional = optional
+        self._sync_requirement(row)
         line = QHBoxLayout()
         line.setSpacing(12)
         if fdef.dtype in (FieldType.BOOL, FieldType.CHOICE):
@@ -288,9 +313,51 @@ class OrderForm(QScrollArea):
         return row
 
     # ------------------------------------------------------------------
-    def sync(self, case: Case, hints: list[LetterHint]) -> None:
-        """Anzeige an die gespeicherten Werte anpassen (ohne Widgets neu zu bauen)."""
+    def is_required(self, key: str) -> bool:
+        """Pflichtangabe laut Vorlage – oder weil die Checkliste das Feld gerade als blockierend meldet."""
+        row = self.rows.get(key)
+        return row is not None and (not row.optional or key in self._blocking)
+
+    def requirement_text(self, key: str) -> str:
+        row = self.rows.get(key)
+        return row.requirement.text() if row is not None and row.requirement is not None else ""
+
+    def _sync_requirement(self, row: _Row, empty: bool = False) -> None:
+        """Kennzeichnung Pflicht/optional (Symbol + Text).
+
+        Pflicht: laut Vorlage nötig oder von der Checkliste gerade als blockierend gemeldet.
+        Ist ein laut Vorlage nötiges Feld leer, blockiert aber (noch) nicht, hängt es von einer
+        anderen Entscheidung ab („je nach Auswahl“).
+        """
+        if row.requirement is None:
+            return
+        blocking = row.key in self._blocking
+        required = not row.optional or blocking
+        fdef = FIELD_REGISTRY[row.key]
+        if required and empty and not blocking and self._blocking_known:
+            text, tip, name = CONDITIONAL_TEXT, CONDITIONAL_TOOLTIP, "Pflichtangabe je nach Auswahl"
+        elif required:
+            text, tip, name = REQUIRED_TEXT, REQUIRED_TOOLTIP, "Pflichtangabe"
+        else:
+            text, tip, name = OPTIONAL_TEXT, OPTIONAL_TOOLTIP, "optionale Angabe"
+        row.requirement.setText(text)
+        row.requirement.setToolTip(tip)
+        row.requirement.setAccessibleName(f"{fdef.label}: {name}")
+        row.requirement.setStyleSheet(
+            f"color: {theme.WARN}; font-weight: 600;" if required else f"color: {theme.TEXT_MUTED};"
+        )
+
+    def sync(self, case: Case, hints: list[LetterHint], blocking: set[str] | None = None) -> None:
+        """Anzeige an die gespeicherten Werte anpassen (ohne Widgets neu zu bauen).
+
+        ``blocking``: Feldschlüssel, die die Checkliste (``review_status``) gerade als
+        blockierend meldet – es gelten dieselben Regeln wie bei der PDF-Erzeugung.
+        """
+        self._blocking = set(blocking or ())
+        self._blocking_known = blocking is not None
         for key, row in self.rows.items():
+            fv = case.get(key)
+            self._sync_requirement(row, empty=fv is None or fv.status == FieldStatus.MISSING)
             self._sync_row(row, case.get(key))
         if self.hints_box is not None:
             clear_layout(self.hints_box)
@@ -340,6 +407,8 @@ class OrderForm(QScrollArea):
             )
         elif fdef.legal_relevant and fdef.dtype in (FieldType.BOOL, FieldType.CHOICE):
             lines.append(f"<span style='color:{theme.ERROR}'>✖ noch nicht entschieden</span>")
+        elif row.key in self._blocking:
+            lines.append(f"<span style='color:{theme.ERROR}'>{BLOCKING_TEXT}</span>")
         else:
             lines.append(f"<span style='color:{theme.TEXT_MUTED}'>○ noch leer</span>")
         for m in fv.validation if fv is not None else []:

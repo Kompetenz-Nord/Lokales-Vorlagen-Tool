@@ -33,9 +33,10 @@ from PySide6.QtWidgets import (
 
 from ...core.service import AppService
 from .. import dialogs
+from ..cloud_folders import cloud_sync_provider, cloud_sync_warning
 from ..studio.common import format_dt, human_size
 from ..studio.model_panel import LocalAiPanel
-from ..theme import ERROR, LOCAL_ONLY_TEXT, OK, TEXT_MUTED
+from ..theme import ERROR, LOCAL_ONLY_TEXT, OK, TEXT_MUTED, WARN
 from ..widgets.common import card, muted, page_title, primary_button, section_title
 from ..workers import user_message
 
@@ -161,6 +162,13 @@ class SettingsPage(QWidget):
         row.addWidget(self.export_dir_reset)
         row.addStretch(1)
         lay.addLayout(row)
+        # Hinweis, wenn Daten- oder Exportordner in einem Cloud-Sync-Ordner liegt (Symbol + Text)
+        self.cloud_warning = QLabel("")
+        self.cloud_warning.setWordWrap(True)
+        self.cloud_warning.setStyleSheet(f"color: {WARN}; font-weight: 600;")
+        self.cloud_warning.setAccessibleName("Warnung: Ordner in einem Cloud-Ordner")
+        self.cloud_warning.hide()
+        lay.addWidget(self.cloud_warning)
         self._storage: dict = {}
         self.content_layout.addWidget(frame)
 
@@ -186,6 +194,16 @@ class SettingsPage(QWidget):
             f"{docs} {'Dokument' if docs == 1 else 'Dokumente'} · {exports} {'Export' if exports == 1 else 'Exporte'}"
         )
         self.export_dir_reset.setEnabled(bool(self.service.settings.export_dir))
+        self._update_cloud_warning()
+
+    def _update_cloud_warning(self) -> None:
+        lines = []
+        for key, title in (("export_dir", "Exportordner"), ("data_dir", "Datenordner")):
+            text = cloud_sync_warning(self._storage.get(key))
+            if text:
+                lines.append(text.replace("Dieser Ordner", f"Der {title}", 1))
+        self.cloud_warning.setText("\n".join(lines))
+        self.cloud_warning.setVisible(bool(lines))
 
     def _open_dir(self, key: str) -> None:
         value = self._storage.get(key)
@@ -199,6 +217,17 @@ class SettingsPage(QWidget):
         start = self.service.export_dir
         path = dialogs.pick_directory(self, "Exportordner wählen", start)
         if path is None:
+            return
+        provider = cloud_sync_provider(path)
+        if provider is not None and not dialogs.ask_confirm(
+            self,
+            "Ordner liegt in einem Cloud-Ordner",
+            f"{cloud_sync_warning(path)}\n\nFertige PDFs enthalten personenbezogene Daten. "
+            "Möchten Sie diesen Ordner trotzdem als Exportordner verwenden?",
+            ok_text="Trotzdem verwenden",
+            cancel_text="Anderen Ordner wählen",
+            danger=True,
+        ):
             return
         try:
             path.mkdir(parents=True, exist_ok=True)

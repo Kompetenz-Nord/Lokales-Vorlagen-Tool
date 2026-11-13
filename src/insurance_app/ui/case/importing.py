@@ -70,3 +70,44 @@ def add_files(parent: QWidget | None, service: AppService, case: Case, paths: li
                 f"„{name}“: {result.message or 'Die Datei kann nicht verarbeitet werden.'}"
             )
     return report
+
+
+LOCKED_SKIPPED_NOTE = (
+    "🔒 „{name}“: Passwort fehlt – die Datei wurde nicht erneut gelesen. "
+    "Passwörter werden nie gespeichert; bitte nach einem Neustart erneut eingeben."
+)
+
+
+def unlock_document(parent: QWidget | None, service: AppService, case: Case, document_id: str) -> bool:
+    """Passwort für ein geschütztes Dokument erneut abfragen (bleibt nur im Arbeitsspeicher).
+
+    ``True``, wenn das Dokument danach geöffnet werden kann. Abbrechen -> ``False``.
+    """
+    doc = case.document(document_id)
+    if doc is None:
+        return False
+    wrong = False
+    while service.document_needs_password(case, document_id):
+        password = dialogs.ask_password_again(parent, doc.original_name, wrong)
+        if not password:
+            return False
+        try:
+            if service.unlock_document(case, document_id, password):
+                return True
+        except Exception as exc:  # noqa: BLE001 – z. B. Datei nicht mehr lesbar
+            log.info("Dokument nicht entsperrt: %s", type(exc).__name__)
+            dialogs.show_error(parent, "Dokument nicht lesbar", error_text(exc))
+            return False
+        wrong = True
+    return True
+
+
+def ensure_passwords(
+    parent: QWidget | None, service: AppService, case: Case, *, only_unread: bool = False
+) -> list[str]:
+    """Vor dem erneuten Lesen fehlende Passwörter abfragen. Rückgabe: Namen übersprungener Dateien."""
+    skipped: list[str] = []
+    for doc in service.documents_needing_password(case, only_unread=only_unread):
+        if not unlock_document(parent, service, case, doc.id):
+            skipped.append(doc.original_name)
+    return skipped

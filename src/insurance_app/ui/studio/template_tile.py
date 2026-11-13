@@ -18,6 +18,7 @@ REASON_NO_CASE = "Bitte zuerst einen Vorgang öffnen (Dashboard / Vorgänge)."
 REASON_MISSING_ORIGINAL = "Originalvorlage fehlt – im Vorlagen-Studio importieren."
 REASON_NEEDS_REVIEW = "Feldzuordnung noch nicht bestätigt – im Vorlagen-Studio prüfen."
 REASON_ERROR = "Vorlage fehlerhaft – Details im Vorlagen-Studio."
+IMPORT_BUTTON_TEXT = "Originalvorlage importieren …"
 
 _UNAVAILABLE_STYLE = (
     f"QFrame#Card {{ background: #F3F5F8; border: 1px dashed {BORDER}; border-radius: 10px; }}"
@@ -48,6 +49,7 @@ class TemplateTile(QFrame):
         choice: TemplateChoice,
         on_use: Callable[[str], None],
         on_studio: Callable[[str], None],
+        on_import: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(objectName="Card")
         self.choice = choice
@@ -113,6 +115,17 @@ class TemplateTile(QFrame):
         self.studio_button.setAccessibleName(f"Vorlage {choice.number} im Vorlagen-Studio öffnen")
         self.studio_button.clicked.connect(lambda: on_studio(choice.catalog_id))
         buttons.addWidget(self.studio_button)
+        # Fehlt die Originalvorlage, führt eine eigene Schaltfläche direkt zum Import im Studio
+        self.import_button: QPushButton | None = None
+        if choice.status == TemplateStatus.MISSING_ORIGINAL and on_import is not None:
+            self.import_button = QPushButton(IMPORT_BUTTON_TEXT)
+            self.import_button.setToolTip(
+                "Wechselt ins Vorlagen-Studio. Dieser Eintrag ist dort schon ausgewählt – Sie wählen "
+                "nur noch die Original-PDF des Versicherers aus."
+            )
+            self.import_button.setAccessibleName(f"Originalvorlage für Vorlage {choice.number} importieren")
+            self.import_button.clicked.connect(lambda: on_import(choice.catalog_id))
+            buttons.addWidget(self.import_button)
         buttons.addStretch(1)
         layout.addLayout(buttons)
 

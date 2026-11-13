@@ -216,7 +216,8 @@ class ReviewPanel(QWidget):
             legal_hint = choice.legal_hint if choice else None
             optional = self._optional(status.template_id, status.relevant_order_keys)
         self.order_form.build(case, status.relevant_order_keys, tpl_kind, optional, legal_hint=legal_hint)
-        self.order_form.sync(case, status.hints)
+        blocking = {i.field_key for i in status.blocking_items if i.field_key}
+        self.order_form.sync(case, status.hints, blocking)
         if status.template_id:
             self.checklist.set_items(status.checklist, ready=status.ready)
         else:

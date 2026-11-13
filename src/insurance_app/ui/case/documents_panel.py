@@ -35,7 +35,7 @@ from .formatting import (
     method_text,
     severity_symbol,
 )
-from .importing import add_files
+from .importing import add_files, ensure_passwords
 
 COLUMNS = ("Dateiname", "Typ", "Seiten", "Prüfung", "Texterkennung je Seite", "Auswertung")
 
@@ -323,7 +323,7 @@ class DocumentsPanel(QWidget):
     def _schedule_row_heights(self) -> None:
         if not self._rows_pending:
             self._rows_pending = True
-            QTimer.singleShot(0, self._fit_rows)
+            QTimer.singleShot(0, self, self._fit_rows)
 
     def _fit_rows(self) -> None:
         """Zeilenhöhe an umbrochenen Text anpassen (erst nach dem Layout sinnvoll)."""
@@ -461,6 +461,18 @@ class DocumentsPanel(QWidget):
                 dialogs.show_error(self, "Lokale KI-Zweitprüfung nicht möglich", error_text(exc))
             self.update_local_ai_state()
 
+        case = self.controller.case
+        if case is None or self.controller.busy:
+            return
+        # Die KI liest die Seiten erneut: fehlende Passwörter (nie gespeichert) vorher abfragen
+        skipped = ensure_passwords(self, self.service, case)
+        if skipped:
+            dialogs.show_info(
+                self,
+                "Passwort fehlt",
+                "🔒 Ohne Passwort können diese Dateien nicht erneut gelesen werden und werden übersprungen:\n"
+                + "\n".join(f"• {name}" for name in skipped),
+            )
         self.controller.run(
             self._task_parent or self,
             "Lokale KI prüft schwierige Seiten (nur auf diesem Rechner) …",

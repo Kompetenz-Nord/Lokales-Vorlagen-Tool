@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 
@@ -25,6 +26,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from insurance_app.core.fields import FIELD_REGISTRY, FieldCategory, FieldType
 from insurance_app.core.models import (
+    BoundingBox,
     Candidate,
     DocumentText,
     DocumentType,
@@ -35,7 +37,16 @@ from insurance_app.core.models import (
 )
 from insurance_app.core.textutil import find_dates, fold, format_date_de, normalize_ws, truncate
 
-from .layout import LAYOUT_CONFIDENCE, LayoutMatch, Line, estimate_skew, find_label_values, group_lines
+from .layout import (
+    LAYOUT_CONFIDENCE,
+    LayoutMatch,
+    Line,
+    drop_noise_fragments,
+    estimate_skew,
+    find_label_values,
+    group_lines,
+    upright_view,
+)
 from .normalize import (
     NOTE_UNREADABLE,
     compact_key,
@@ -69,6 +80,10 @@ log = logging.getLogger(__name__)
 
 EMBEDDED_OCR_FACTOR = 0.85
 UNPARSABLE_FACTOR = 0.5
+#: Ein Wertwort unter dieser OCR-Konfidenz macht den ganzen Wert unsicher …
+LOW_WORD_CONFIDENCE = 0.3
+#: … die Wortkonfidenz wird dann auf diesen Wert begrenzt (-> Status „Unklar“)
+LOW_WORD_CAP = 0.4
 NOTE_COMPANY_AS_INSURED = "Firmenname bei der versicherten Person – bitte prüfen."
 
 _STRUCTURED_TYPES = {
@@ -130,10 +145,20 @@ def _is_structured(key: str) -> bool:
 
 
 def _word_confidence(words: list[Word]) -> float | None:
+    """Mittlere OCR-Konfidenz der Wertwörter.
+
+    Enthält der Wert ein sehr unsicher gelesenes Wort (< ``LOW_WORD_CONFIDENCE``),
+    wird das Ergebnis auf ``LOW_WORD_CAP`` begrenzt: Der Wert erscheint dann als
+    „Unklar“ statt „Erkannt“, auch wenn die übrigen Wörter sicher gelesen wurden
+    (typisch: ein Wasserzeichen-Fetzen direkt vor dem Wert).
+    """
     vals = [w.confidence for w in words if w.confidence is not None]
     if not vals:
         return None
-    return max(0.0, min(1.0, sum(vals) / len(vals)))
+    mean = max(0.0, min(1.0, sum(vals) / len(vals)))
+    if min(vals) < LOW_WORD_CONFIDENCE:
+        return min(mean, LOW_WORD_CAP)
+    return mean
 
 
 def _overlaps_y(y0: float, y1: float, ranges: list[tuple[float, float]], tol: float) -> bool:
@@ -235,6 +260,8 @@ class _DocExtractor:
         self.warnings: list[str] = []
         self.insurer_ibans: set[str] = set()
         self._bank_dropped_pages: set[int] = set()
+        #: Rückrechnung der Fundstelle in die angezeigte Seite (bei quer liegenden Scans)
+        self._to_display: Callable[[BoundingBox | None], BoundingBox | None] = lambda box: box
 
     # -- Kandidaten ------------------------------------------------------
     def _evidence(self, page: PageText, m: LayoutMatch, rule_id: str | None = None, quote: str | None = None):
@@ -248,7 +275,7 @@ class _DocExtractor:
             file_name=self.info.file_name,
             page=page.page_number,
             quote=truncate(quote, 160) if quote else None,
-            bbox=m.value_bbox if m.value_bbox is not None else m.label_bbox,
+            bbox=self._to_display(m.value_bbox if m.value_bbox is not None else m.label_bbox),
             method=page.method,
             model_version=page.engine_version,
             rule_id=rule_id or m.rule_id,
@@ -295,6 +322,15 @@ class _DocExtractor:
         if not page.words:
             self.warnings.append(f"Seite {page.page_number}: kein lesbarer Text – keine Werte übernommen.")
             return
+        # Quer oder auf dem Kopf erkannte Seiten: Zuordnung auf der aufgerichteten Seite,
+        # die Fundstelle wird danach in die angezeigte Seite zurückgerechnet.
+        view = upright_view(page)
+        page = view.page
+        self._to_display = view.to_display
+        # Allein stehende, unsichere OCR-Wortfetzen (Wasserzeichen, Scan-Schmutz) nicht als Wert lesen
+        cleaned = drop_noise_fragments(page.words)
+        if len(cleaned) != len(page.words):
+            page = page.model_copy(update={"words": cleaned})
         lines = group_lines(page.words, skew=estimate_skew(page.words))
         creditor = find_creditor_line_ys(lines)
         self._collect_insurer_ibans(page, lines, creditor)

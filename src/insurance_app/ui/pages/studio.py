@@ -54,8 +54,8 @@ from ..studio.common import (
 from ..studio.coordinate_editor import CoordinateEditorDialog
 from ..studio.mapping_editor import MappingEditor
 from ..studio.sample_fill import PagePreviewDialog, SampleFillResult, run_sample_fill
-from ..theme import TEXT_MUTED
-from ..widgets.common import badge, muted, page_title, primary_button
+from ..theme import INFO, TEXT_MUTED
+from ..widgets.common import badge, danger_button, muted, page_title, primary_button
 from ..workers import Task, run_task, user_message
 
 log = logging.getLogger(__name__)
@@ -75,6 +75,23 @@ COL_SOURCE = 6
 VERSION_COLUMNS = ("Version", "Quelle", "Übernommen am", "Bestätigt", "Prüfsumme (SHA-256)", "Verwendung")
 PDF_FILTER = "PDF (*.pdf)"
 PACKAGE_FILTER = "Vorlagenpaket (*.zip)"
+
+IMPORT_EXPLANATION = (
+    "Was beim Import passiert:\n"
+    "• Ihre Original-PDF bleibt unverändert. Die App legt nur eine schreibgeschützte Kopie an.\n"
+    "• Die App sucht die ausfüllbaren Formularfelder der PDF und schlägt eine Zuordnung vor.\n"
+    "• Diese Zuordnung müssen Sie Zeile für Zeile prüfen und bestätigen. Erst danach ist die "
+    "Vorlage „Aktiv“ und kann befüllt werden.\n"
+    "• Nichts verlässt dieses Gerät: kein Upload, keine Cloud, keine Übermittlung an Dritte.\n"
+    "• Die Berechtigungen der PDF werden beachtet. Erlaubt die PDF das Ausfüllen nicht oder ist sie "
+    "passwortgeschützt, wird sie nicht befüllt – ein Schutz wird nie umgangen."
+)
+IMPORT_LETTER_NOTE = (
+    "Hinweis zu diesem Eintrag: Bisher erzeugt die App hierfür ein Kundenschreiben nach DIN 5008. "
+    "Nach dem Import einer eigenen Originalvorlage ist der Eintrag erst wieder wählbar, wenn Sie "
+    "die Feldzuordnung geprüft und bestätigt haben."
+)
+REMOVE_BUTTON_TEXT = "Importierte Version entfernen"
 
 
 class StudioPage(QWidget):
@@ -135,6 +152,11 @@ class StudioPage(QWidget):
         self.import_pkg_button.clicked.connect(self.import_package)
         actions.addWidget(self.import_pkg_button)
         outer.addLayout(actions)
+        self.import_hint = QLabel("")
+        self.import_hint.setWordWrap(True)
+        self.import_hint.setStyleSheet(f"color: {INFO}; font-weight: 600;")
+        self.import_hint.setVisible(False)
+        outer.addWidget(self.import_hint)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
         self.table = QTableWidget(0, len(TABLE_COLUMNS))
@@ -194,6 +216,14 @@ class StudioPage(QWidget):
             sha_item.setToolTip(TOOLTIP_SHA)
         self.versions_table.itemSelectionChanged.connect(self._on_version_selection)
         vl.addWidget(self.versions_table, 1)
+        remove_row = QHBoxLayout()
+        self.remove_version_button = danger_button(REMOVE_BUTTON_TEXT)
+        self.remove_version_button.setAccessibleName(REMOVE_BUTTON_TEXT)
+        self.remove_version_button.clicked.connect(self.remove_version)
+        remove_row.addWidget(self.remove_version_button)
+        self.remove_hint = muted("")
+        remove_row.addWidget(self.remove_hint, 1)
+        vl.addLayout(remove_row)
         self.tabs.addTab(versions_box, "Versionen")
         dl.addWidget(self.tabs, 1)
         splitter.addWidget(detail)
@@ -525,6 +555,19 @@ class StudioPage(QWidget):
             else "Nur für PDFs ohne Formularfelder. Diese Vorlage hat ausfüllbare Felder. " + TOOLTIP_ACROFORM
         )
         self.export_pkg_button.setEnabled(has_pdf)
+        removable = v is not None and v.source == "importiert"
+        self.remove_version_button.setEnabled(removable)
+        if v is None:
+            reason = "Bitte zuerst eine Version in der Tabelle auswählen."
+        elif removable:
+            reason = (
+                f"Löscht die von Ihnen importierte Version {v.version} (Kopie der PDF und Feldzuordnung). "
+                "Bereits erzeugte PDFs bleiben erhalten."
+            )
+        else:
+            reason = "ℹ Mitgelieferte Originalvorlagen gehören zum Programm und können nicht entfernt werden."
+        self.remove_version_button.setToolTip(reason)
+        self.remove_hint.setText("" if removable or v is None else reason)
 
     # ------------------------------------------------------------------
     # Aktionen
@@ -533,19 +576,20 @@ class StudioPage(QWidget):
         if self.catalog_id is None:
             return
         choice = self._choice(self.catalog_id)
-        if (
-            choice is not None
-            and choice.kind == "letter"
-            and not dialogs.ask_confirm(
-                self,
-                "Eigene Originalvorlage importieren?",
-                "Für diesen Eintrag erzeugt die App bisher ein Kundenschreiben nach DIN 5008.\n\n"
-                "Nach dem Import einer eigenen Originalvorlage ist der Eintrag erst wieder wählbar, wenn Sie "
-                "die Feldzuordnung geprüft und bestätigt haben. Fortfahren?",
-                ok_text="Ja, importieren",
-            )
+        entry = self.service.registry.entry(self.catalog_id)
+        is_letter = choice is not None and choice.kind == "letter"
+        text = f"Originalvorlage für „{entry.title}“ ({entry.insurer}) importieren.\n\n{IMPORT_EXPLANATION}"
+        if is_letter:
+            text += f"\n\n{IMPORT_LETTER_NOTE}"
+        text += "\n\nIm nächsten Schritt wählen Sie die PDF-Datei aus. Fortfahren?"
+        if not dialogs.ask_confirm(
+            self,
+            "Eigene Originalvorlage importieren?" if is_letter else "Originalvorlage importieren",
+            text,
+            ok_text="PDF auswählen …",
         ):
             return
+        self.import_hint.setVisible(False)
         path = dialogs.pick_open_file(self, "Originalvorlage (PDF) auswählen", PDF_FILTER)
         if path is None:
             return
@@ -572,6 +616,67 @@ class StudioPage(QWidget):
         if self.current_version is not None and self.current_version.version == version:
             self._load_version(self.current_version, draft)
         self.tabs.setCurrentIndex(0)
+
+    def prepare_import(self, catalog_id: str) -> None:
+        """Eintrag für den Import vorwählen (aus dem Katalog „Originalvorlage importieren …“)."""
+        self.select_entry(catalog_id)
+        if self.catalog_id != catalog_id:
+            return
+        entry = self.service.registry.entry(catalog_id)
+        self.import_hint.setText(
+            f"➜ „{entry.title}“ ist für den Import ausgewählt. Klicken Sie jetzt auf "
+            "„Originalvorlage importieren …“ und wählen Sie die Original-PDF des Versicherers."
+        )
+        self.import_hint.setVisible(True)
+        self.import_button.setFocus()
+
+    def remove_version(self) -> None:
+        """Ausgewählte, selbst importierte Version nach Rückfrage löschen."""
+        v = self.current_version
+        catalog_id = self.catalog_id
+        if v is None or catalog_id is None or v.source != "importiert":
+            return
+        try:
+            affected = self.service.cases_using_template_version(catalog_id, v.version)
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self, "Version nicht entfernt", user_message(exc))
+            return
+        entry = self.service.registry.entry(catalog_id)
+        text = (
+            f"Die importierte Version {v.version} von „{entry.title}“ wirklich entfernen?\n\n"
+            "• Gelöscht werden die Kopie der Original-PDF und die Feldzuordnung dieser Version. "
+            "Das lässt sich nicht rückgängig machen.\n"
+            "• Bereits erzeugte PDFs und das Exportprotokoll bleiben unverändert.\n"
+            "• Mitgelieferte Originalvorlagen des Programms bleiben erhalten."
+        )
+        if affected:
+            text += (
+                f"\n\n⚠ {len(affected)} Vorgang/Vorgänge verwenden diese Version. Ihre Daten bleiben "
+                "erhalten, aber dort muss die Vorlage neu ausgewählt werden, bevor eine PDF erzeugt "
+                "werden kann."
+            )
+        if self.editor.dirty:
+            text += "\n\n⚠ Ungespeicherte Änderungen an der Feldzuordnung gehen dabei verloren."
+        if not dialogs.ask_confirm(
+            self, "Importierte Version entfernen?", text, ok_text="Endgültig entfernen", danger=True
+        ):
+            return
+        try:
+            affected = self.service.remove_imported_template_version(catalog_id, v.version)
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self, "Version nicht entfernt", user_message(exc))
+            return
+        self.editor.mark_clean()
+        self.current_version = None
+        self.refresh()
+        self.select_entry(catalog_id)
+        info = f"Die importierte Version {v.version} wurde entfernt."
+        if affected:
+            info += (
+                f"\n\n{len(affected)} Vorgang/Vorgänge müssen die Vorlage neu auswählen "
+                "(Hinweis in der Checkliste des Vorgangs)."
+            )
+        dialogs.show_info(self, "Version entfernt", info)
 
     def _after_save(self, catalog_id: str, _confirmed: bool) -> None:
         version = self.current_version.version if self.current_version else None

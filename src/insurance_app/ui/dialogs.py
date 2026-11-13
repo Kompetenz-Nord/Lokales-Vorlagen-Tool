@@ -56,6 +56,21 @@ def ask_password(parent: QWidget | None, file_name: str, wrong: bool = False) ->
     return text if ok and text else None
 
 
+def ask_password_again(parent: QWidget | None, file_name: str, wrong: bool = False) -> str | None:
+    """Passwort für ein bereits übernommenes, geschütztes PDF erneut abfragen (z. B. nach Neustart)."""
+    prompt = ("✖ Das Passwort war falsch. Bitte erneut eingeben.\n\n" if wrong else "") + (
+        f"🔒 „{file_name}“ ist passwortgeschützt.\n\n"
+        "Aus Sicherheitsgründen speichert die App Passwörter nie. Nach einem Neustart "
+        "muss das Passwort deshalb erneut eingegeben werden, damit die Datei wieder "
+        "gelesen oder angezeigt werden kann.\n\n"
+        "Bitte das Passwort eingeben (es bleibt nur bis zum Beenden der App im Arbeitsspeicher):"
+    )
+    text, ok = QInputDialog.getText(
+        parent, "Passwort erneut erforderlich", prompt, QLineEdit.EchoMode.Password
+    )
+    return text if ok and text else None
+
+
 def ask_text(parent: QWidget | None, title: str, label: str, value: str = "") -> str | None:
     text, ok = QInputDialog.getText(parent, title, label, QLineEdit.EchoMode.Normal, value)
     return text if ok else None

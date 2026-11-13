@@ -9,6 +9,10 @@ Lage der Wörter auf der Seite:
   auch nach großer Lücke (zweispaltige Tabellen),
 * Abbruch bei sehr großer Lücke (> ~8 % der Seitenbreite) oder am nächsten Label,
 * ersatzweise Wert in der Zeile darunter (Label über Wert),
+* Tabellen mit Kopfzeile („Versicherungsbeginn | Ablauf | Tarif“): Stehen in einer
+  Zeile nur Beschriftungen und darunter eine reine Wertzeile, gehört zu jeder
+  Beschriftung der Wert in derselben Spalte. Mehrere Wertzeilen (z. B. ein
+  Beitragsverlauf) ergeben mehrere Treffer – ausgewählt wird hier nichts,
 * Abschnittsüberschriften („Versicherte Person“, „Versicherungsnehmer“ …)
   ordnen allgemeine Labels („Name“, „Anschrift“ …) dem richtigen Feld zu.
 
@@ -37,11 +41,15 @@ __all__ = [
     "LayoutMatch",
     "Line",
     "PageGeometry",
+    "UprightView",
+    "detect_text_rotation",
+    "drop_noise_fragments",
     "find_label_values",
     "group_lines",
     "estimate_skew",
     "page_geometry",
     "union_bbox",
+    "upright_view",
 ]
 
 # Heuristische Regel-Konfidenzen (NICHT kalibriert)
@@ -50,6 +58,7 @@ LAYOUT_CONFIDENCE: dict[str, float] = {
     "layout_right_colon_tight": 0.8,
     "layout_inline": 0.6,
     "layout_below": 0.7,
+    "layout_header_below": 0.7,
 }
 FUZZY_FACTOR = 0.9
 MAX_LABEL_WORDS = 7
@@ -59,6 +68,8 @@ MAX_SKEW_SLOPE = math.tan(math.radians(5.0))
 MIN_SKEW_SLOPE = 0.0015  # darunter gilt die Seite als gerade
 #: Eine Abschnittsüberschrift gilt höchstens so viele Zeilen weit nach unten
 SECTION_MAX_LINES = 12
+#: Höchstzahl der Wertzeilen unter einer Tabellen-Kopfzeile
+HEADER_MAX_ROWS = 12
 # Vorangestellte Wörter, die ein Label als früheren Wert kennzeichnen („Bisheriger Beitrag:“)
 _OLD_VALUE_QUALIFIER = re.compile(
     r"^(?:bisherig|ursprueng|frueher|vorherig|vormalig|ehemalig|alte[rsmn]?$|alt$)"
@@ -123,6 +134,114 @@ def union_bbox(words: Iterable[Word]) -> BoundingBox | None:
     for w in words:
         box = w.bbox if box is None else box.union(w.bbox)
     return box
+
+
+# ---------------------------------------------------------------------------
+# Leserichtung (quer oder auf dem Kopf stehende Seiten)
+# ---------------------------------------------------------------------------
+
+#: Mindestzahl aufeinanderfolgender Wortpaare einer Zeile für die Bestimmung der Leserichtung
+ROTATION_MIN_PAIRS = 12
+#: Mindestanteil der Wortpaare, die in dieselbe Richtung zeigen
+ROTATION_MIN_SHARE = 0.8
+
+
+def detect_text_rotation(words: Sequence[Word]) -> int:
+    """Drehung im Uhrzeigersinn (0/90/180/270), die die Seite aufrichtet.
+
+    Grundlage ist die Lesereihenfolge: Aufeinanderfolgende Wörter derselben
+    Zeile (``block_no``/``line_no``) laufen bei aufrechter Seite nach rechts,
+    bei einer im Uhrzeigersinn um 90° gedrehten Seite nach unten usw. Für 90°
+    und 270° müssen zusätzlich die längeren Wörter hochkant stehen. Ohne
+    eindeutiges Bild (zu wenige Paare, gemischte Richtungen) ist das Ergebnis 0.
+    """
+    counts = {0: 0, 90: 0, 180: 0, 270: 0}
+    for a, b in zip(words, words[1:], strict=False):
+        if a.block_no is None or a.line_no is None:
+            continue
+        if (a.block_no, a.line_no) != (b.block_no, b.line_no):
+            continue
+        dx = (b.bbox.x0 + b.bbox.x1) / 2 - (a.bbox.x0 + a.bbox.x1) / 2
+        dy = b.bbox.center_y - a.bbox.center_y
+        if dx == 0 and dy == 0:
+            continue
+        if abs(dx) >= abs(dy):
+            counts[0 if dx > 0 else 180] += 1
+        else:
+            # Text läuft nach unten -> Seite gegen den Uhrzeigersinn drehen (= 270° im Uhrzeigersinn)
+            counts[270 if dy > 0 else 90] += 1
+    total = sum(counts.values())
+    if total < ROTATION_MIN_PAIRS:
+        return 0
+    rotation = max(counts, key=lambda r: counts[r])
+    if rotation == 0 or counts[rotation] / total < ROTATION_MIN_SHARE:
+        return 0
+    if rotation in (90, 270):
+        long_words = [w for w in words if len(w.text.strip()) >= 4 and w.bbox.width > 0]
+        tall = sum(1 for w in long_words if w.bbox.height > w.bbox.width)
+        if not long_words or tall / len(long_words) < 0.6:
+            return 0
+    return rotation
+
+
+def _box_to_upright(b: BoundingBox, rotation: int, width: float, height: float) -> BoundingBox:
+    """Box der angezeigten Seite (``width`` × ``height``) in die aufgerichtete Seite umrechnen."""
+    if rotation == 90:
+        return BoundingBox(x0=height - b.y1, y0=b.x0, x1=height - b.y0, y1=b.x1)
+    if rotation == 180:
+        return BoundingBox(x0=width - b.x1, y0=height - b.y1, x1=width - b.x0, y1=height - b.y0)
+    if rotation == 270:
+        return BoundingBox(x0=b.y0, y0=width - b.x1, x1=b.y1, y1=width - b.x0)
+    return b
+
+
+def _box_from_upright(b: BoundingBox, rotation: int, width: float, height: float) -> BoundingBox:
+    """Umkehrung von :func:`_box_to_upright` (``width``/``height`` der angezeigten Seite)."""
+    if rotation == 90:
+        return BoundingBox(x0=b.y0, y0=height - b.x1, x1=b.y1, y1=height - b.x0)
+    if rotation == 180:
+        return BoundingBox(x0=width - b.x1, y0=height - b.y1, x1=width - b.x0, y1=height - b.y0)
+    if rotation == 270:
+        return BoundingBox(x0=width - b.y1, y0=b.x0, x1=width - b.y0, y1=b.x1)
+    return b
+
+
+@dataclass(frozen=True)
+class UprightView:
+    """Aufgerichtete Sicht auf eine Seite für die Label↔Wert-Zuordnung.
+
+    ``page``: Seite mit Wortboxen in aufgerichteten Koordinaten (bei
+    ``rotation == 0`` die unveränderte Seite). ``to_display()`` rechnet eine
+    Box zurück in die angezeigte Seite – dort wird die Fundstelle markiert.
+    """
+
+    page: PageText
+    rotation: int
+    display_width: float
+    display_height: float
+
+    def to_display(self, box: BoundingBox | None) -> BoundingBox | None:
+        if box is None or not self.rotation:
+            return box
+        return _box_from_upright(box, self.rotation, self.display_width, self.display_height)
+
+
+def upright_view(page: PageText) -> UprightView:
+    """Seite so drehen, dass der Text waagerecht von links nach rechts läuft.
+
+    Gedreht wird nur, wenn die Leserichtung eindeutig ist
+    (:func:`detect_text_rotation`). Die Reihenfolge der Wörter bleibt erhalten.
+    """
+    rotation = detect_text_rotation(page.words)
+    if not rotation:
+        return UprightView(page=page, rotation=0, display_width=page.width, display_height=page.height)
+    words = [
+        w.model_copy(update={"bbox": _box_to_upright(w.bbox, rotation, page.width, page.height)})
+        for w in page.words
+    ]
+    size = (page.height, page.width) if rotation in (90, 270) else (page.width, page.height)
+    upright = page.model_copy(update={"words": words, "width": size[0], "height": size[1]})
+    return UprightView(page=upright, rotation=rotation, display_width=page.width, display_height=page.height)
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +367,59 @@ def group_lines(words: list[Word], skew: float | None = None) -> list[Line]:
         lines.append((centers[idx], Line(words=ws, bbox=box, text=" ".join(w.text for w in ws))))
     lines.sort(key=lambda cl: (cl[0], cl[1].bbox.x0))
     return [ln for _, ln in lines]
+
+
+# ---------------------------------------------------------------------------
+# Wortfetzen der Texterkennung (z. B. Reste eines diagonalen Wasserzeichens)
+# ---------------------------------------------------------------------------
+
+#: Allein stehende Fetzen mit höchstens 2 Buchstaben/Ziffern entfallen unter dieser Konfidenz
+NOISE_SHORT_CONFIDENCE = 0.6
+#: Allein stehende Fetzen mit höchstens 4 Buchstaben/Ziffern entfallen unter dieser Konfidenz
+NOISE_LOW_CONFIDENCE = 0.3
+
+
+def drop_noise_fragments(words: list[Word]) -> list[Word]:
+    """Unsichere, sehr kurze und allein stehende OCR-Wortfetzen entfernen.
+
+    Ein diagonales Wasserzeichen oder Scan-Schmutz hinterlässt zwischen
+    Beschriftung und Wert oft Fetzen wie „Br“, „I“ oder „2...“. Sie würden als
+    Wert gelten und den echten Wert verdrängen. Entfernt wird ein Wort nur, wenn
+    alle Bedingungen zutreffen:
+
+    * es hat eine OCR-Konfidenz (Wörter aus einer PDF-Textebene bleiben immer),
+    * es steht allein: Der Abstand zu den Nachbarn in der Zeile ist größer als
+      eine Spaltenlücke,
+    * es ist kurz und unsicher: höchstens 2 Buchstaben/Ziffern bei Konfidenz
+      unter 0,6 oder höchstens 4 bei Konfidenz unter 0,3.
+
+    Unsichere Wörter direkt an einem Wert bleiben stehen; der Wert wird dann als
+    „Unklar“ markiert (siehe ``extractor``). Die Reihenfolge bleibt erhalten.
+    """
+    if not any(w.confidence is not None for w in words):
+        return words
+    geo = page_geometry(words, 0.0)
+    slope = estimate_skew(words)
+    drop: set[int] = set()
+    for line in group_lines(words, skew=slope):
+        ws = line.words
+        for i, w in enumerate(ws):
+            if w.confidence is None:
+                continue
+            alnum = sum(1 for c in w.text if c.isalnum())
+            if alnum == 0:
+                continue  # reine Satzzeichen stören die Zuordnung nicht
+            short = alnum <= 2 and w.confidence < NOISE_SHORT_CONFIDENCE
+            low = alnum <= 4 and w.confidence < NOISE_LOW_CONFIDENCE
+            if not (short or low):
+                continue
+            left = w.bbox.x0 - ws[i - 1].bbox.x1 if i > 0 else math.inf
+            right = ws[i + 1].bbox.x0 - w.bbox.x1 if i + 1 < len(ws) else math.inf
+            if min(left, right) > geo.seg_gap:
+                drop.add(id(w))
+    if not drop:
+        return words
+    return [w for w in words if id(w) not in drop]
 
 
 # ---------------------------------------------------------------------------
@@ -475,6 +647,9 @@ class _RawHit:
     placeholder_empty: bool = False
     continuation: list[_Tok] = field(default_factory=list)
     tight: bool = False
+    line_idx: int = -1
+    right: _Side | None = None
+    extra_rows: list[list[_Tok]] = field(default_factory=list)  # weitere Wertzeilen (Tabelle)
 
     @property
     def cy(self) -> float:
@@ -514,7 +689,7 @@ def find_label_values(
         matcher.geo = geo
 
     raw_hits: list[_RawHit] = []
-    for line in lines:
+    for line_idx, line in enumerate(lines):
         seq = [tok_by_id[id(w)] for w in line.words]
         i = 0
         while i < len(seq):
@@ -537,15 +712,24 @@ def find_label_values(
             assert box is not None
             if not hit.phrase.stop or hit.phrase.label_capable or hit.phrase.heading:
                 raw_hits.append(
-                    _RawHit(toks=label_toks, phrase=hit.phrase, fuzzy=hit.fuzzy, colon=colon_end, bbox=box)
+                    _RawHit(
+                        toks=label_toks,
+                        phrase=hit.phrase,
+                        fuzzy=hit.fuzzy,
+                        colon=colon_end,
+                        bbox=box,
+                        line_idx=line_idx,
+                    )
                 )
             i = hit.end
 
     headings: list[tuple[str, BoundingBox, float]] = []
-    for rh in raw_hits:
-        if rh.phrase.stop and not rh.phrase.label_capable:
-            continue
-        _classify(rh, toks, matcher, geo)
+    classifiable = [rh for rh in raw_hits if not rh.phrase.stop or rh.phrase.label_capable]
+    for rh in classifiable:
+        rh.right = _right(rh, toks, matcher, geo)
+    header_lines = _header_lines(classifiable)
+    for rh in classifiable:
+        _classify(rh, toks, matcher, geo, in_header_row=rh.line_idx in header_lines)
         if rh.kind == "heading" and rh.phrase.heading:
             headings.append((rh.phrase.heading, rh.bbox, rh.cy))
 
@@ -559,7 +743,95 @@ def find_label_values(
         if key is None:
             continue
         out.append(_to_match(rh, key, section if used_section else None, page.page_number))
+        for row in rh.extra_rows:
+            other = replace(rh, value=row, continuation=[], extra_rows=[])
+            out.append(_to_match(other, key, section if used_section else None, page.page_number))
     return out
+
+
+def _header_lines(hits: Sequence[_RawHit]) -> set[int]:
+    """Zeilen, die nur aus Beschriftungen bestehen (Kopfzeile einer Tabelle).
+
+    Mindestens zwei Beschriftungen, keine hat rechts einen eigenen Wert, und
+    mindestens eine hat rechts unmittelbar die nächste Beschriftung.
+    """
+    by_line: dict[int, list[_RawHit]] = {}
+    for rh in hits:
+        by_line.setdefault(rh.line_idx, []).append(rh)
+    out: set[int] = set()
+    for idx, group in by_line.items():
+        if len(group) < 2 or idx < 0:
+            continue
+        sides = [rh.right for rh in group if rh.right is not None]
+        if any(side.words for side in sides):
+            continue
+        if any(side.first_is_label for side in sides):
+            out.add(idx)
+    return out
+
+
+def _segments(row: Sequence[_Tok], geo: PageGeometry) -> list[list[_Tok]]:
+    """Zeile an Spaltenlücken (> ``seg_gap``) in Segmente teilen."""
+    segments: list[list[_Tok]] = []
+    for t in row:
+        if segments and (t.x0 - segments[-1][-1].x1) <= geo.seg_gap:
+            segments[-1].append(t)
+        else:
+            segments.append([t])
+    return segments
+
+
+def _header_values(
+    rh: _RawHit, toks: Sequence[_Tok], matcher: _Matcher, geo: PageGeometry
+) -> tuple[list[list[_Tok]], bool]:
+    """Werte unter einer Beschriftung in einer Tabellen-Kopfzeile.
+
+    Rückgabe: (Wertzeilen dieser Spalte, gab es überhaupt eine Wertzeile?).
+    Eine Wertzeile zählt nur, wenn sie zur Tabelle passt: keine Beschriftung
+    darin, jedes Segment beginnt in genau einer Spalte und reicht nicht in die
+    nächste, und mindestens zwei Spalten sind belegt. So wird Fließtext unter
+    der Kopfzeile nicht als Wert übernommen.
+    """
+    tol_x = geo.median_height
+    header = sorted((t for t in toks if abs(t.cy - rh.cy) <= geo.tol_y and t.ck), key=lambda t: t.x0)
+    starts = [seg[0].x0 for seg in _segments(header, geo)]
+    own = next((i for i, x in enumerate(starts) if abs(x - rh.bbox.x0) <= 0.5), None)
+    if own is None or len(starts) < 2:
+        return [], False
+
+    def column_of(x0: float) -> int | None:
+        for i, start in enumerate(starts):
+            end = starts[i + 1] if i + 1 < len(starts) else math.inf
+            if start - tol_x <= x0 < end - tol_x:
+                return i
+        return None
+
+    rows: list[list[_Tok]] = []
+    seen_value_row = False
+    prev_cy = rh.cy
+    for _ in range(HEADER_MAX_ROWS):
+        below = [t for t in toks if geo.tol_y < (t.cy - prev_cy) <= geo.below_max and t.ck]
+        if not below:
+            break
+        top = min(t.cy for t in below)
+        row = sorted((t for t in toks if abs(t.cy - top) <= geo.tol_y), key=lambda t: t.x0)
+        segments = _segments(row, geo)
+        cells: dict[int, list[_Tok]] = {}
+        valid = True
+        for seg in segments:
+            col = column_of(seg[0].x0)
+            limit = starts[col + 1] if col is not None and col + 1 < len(starts) else math.inf
+            if col is None or seg[-1].x1 > limit or matcher.match_at(seg, 0) is not None:
+                valid = False
+                break
+            cells.setdefault(col, []).extend(seg)
+        if not valid or len(cells) < 2:
+            break
+        seen_value_row = True
+        if own in cells:
+            rows.append(cells[own])
+        prev_cy = sum(t.cy for t in row) / len(row)
+    return rows, seen_value_row
 
 
 def _line_pitch(lines: list[Line], slope: float, geo: PageGeometry) -> float | None:
@@ -691,9 +963,26 @@ def _continuation(rh: _RawHit, toks: Sequence[_Tok], matcher: _Matcher, geo: Pag
     return side.words
 
 
-def _classify(rh: _RawHit, toks: Sequence[_Tok], matcher: _Matcher, geo: PageGeometry) -> None:
+def _classify(
+    rh: _RawHit,
+    toks: Sequence[_Tok],
+    matcher: _Matcher,
+    geo: PageGeometry,
+    *,
+    in_header_row: bool = False,
+) -> None:
     ph = rh.phrase
-    right = _right(rh, toks, matcher, geo)
+    right = rh.right if rh.right is not None else _right(rh, toks, matcher, geo)
+    if in_header_row and ph.label_capable and not ph.heading and not right.words:
+        rows, value_row = _header_values(rh, toks, matcher, geo)
+        if rows:
+            rh.kind = "label"
+            rh.value = rows[0]
+            rh.extra_rows = rows[1:]
+            rh.rule = "layout_header_below"
+            return
+        if value_row:
+            return  # Tabelle erkannt, aber diese Spalte ist leer/unklar: nichts behaupten
     if right.words:
         if not ph.label_capable:
             return  # reine Überschrift mit Text daneben -> Fließtext

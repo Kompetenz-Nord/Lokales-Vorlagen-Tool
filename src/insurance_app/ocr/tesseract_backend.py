@@ -12,12 +12,26 @@ Ablauf je Seite
    (``conf / 100``; Einträge mit ``conf < 0`` oder leerem Text entfallen).
    Wortboxen werden in das übergebene Bild zurückgerechnet (Begradigung und
    Vergrößerung umgekehrt) und dann in Seitenkoordinaten skaliert.
-3. Ist die mittlere Konfidenz < 0,5 (oder gibt es keine Wörter), prüft die
-   Lageerkennung (OSD), ob die Seite um 90/180/270° gedreht ist. Dann wird die
-   aufgerichtete Seite erneut erkannt und das bessere Ergebnis behalten
-   (``PageText.rotation`` = Drehung im Uhrzeigersinn, Koordinaten beziehen sich
-   dann auf die aufgerichtete Seite).
-4. Qualität über ``ocr.page_quality``.
+3. Seitenlage: Ist das Ergebnis schwach (keine Wörter, sehr wenig Text oder
+   mittlere Konfidenz < 0,5) **oder** stehen die Wörter hochkant (Tesseract
+   liest quer liegenden Text oft mit hoher Konfidenz), prüft die Lageerkennung
+   (OSD, ``--psm 0``), ob die Seite um 90/180/270° gedreht ist. Die
+   aufgerichtete Seite wird erneut erkannt und das bessere Ergebnis behalten.
+   Fehlt das Sprachpaket ``osd``, werden die Drehungen ausprobiert; eine
+   Drehung gilt nur, wenn sie klar am besten ist.
+   Die Wortboxen werden danach in die **übergebene (angezeigte) Seite**
+   zurückgerechnet: Breite, Höhe und ``PageText.rotation`` bleiben unverändert,
+   damit die Fundstelle in der Ansicht an der richtigen Stelle liegt. Die
+   Wörter stehen in Lesereihenfolge; die Extraktion erkennt die Leserichtung
+   daran (``extraction.layout.detect_text_rotation``).
+4. Rauschen: Bleibt das Ergebnis schwach, folgt genau ein weiterer Versuch mit
+   einem Medianfilter (``preprocess.denoise_median``). Das bessere Ergebnis
+   bleibt, ein Hinweis nennt den Filter.
+5. Qualität über ``ocr.page_quality``.
+
+Rechenkerne: Tesseract läuft mit ``OMP_THREAD_LIMIT=1`` (ein Rechenkern), wenn
+die Umgebung nichts anderes vorgibt. Ohne Begrenzung konkurrieren die Threads
+unter Last so stark, dass eine Seite in die Zeitgrenze laufen kann.
 """
 
 from __future__ import annotations
@@ -40,14 +54,30 @@ from ..core.models import ExtractionMethod, PageText, TextLayerOrigin, Word
 from ..core.settings import Settings
 from .base import OcrError, OcrUnavailableError, scale_bbox, weighted_mean_confidence, words_to_text
 from .page_quality import assess_text_quality, text_statistics
-from .preprocess import deskew, rotate_point_back, to_grayscale, upscale_if_small
+from .preprocess import (
+    denoise_median,
+    deskew,
+    rotate_box_back,
+    rotate_point_back,
+    to_grayscale,
+    upscale_if_small,
+)
 
 log = logging.getLogger(__name__)
 
 #: Unter dieser mittleren Konfidenz wird die Seitenlage geprüft (OSD).
 OSD_RETRY_CONFIDENCE = 0.5
+#: Unter so vielen Buchstaben/Ziffern gilt eine Seite als „sehr wenig Text“.
+WEAK_TEXT_CHARS = 20
+#: Ohne OSD: Eine ausprobierte Drehung muss um diesen Wert besser sein als die nächstbeste.
+ROTATION_CLEAR_MARGIN = 0.15
+#: Hochkant-Prüfung: Mindestzahl längerer Wörter und Mindestanteil hochkant stehender Boxen.
+SIDEWAYS_MIN_WORDS = 5
+SIDEWAYS_MIN_SHARE = 0.6
 #: Zeitlimit je Tesseract-Aufruf (Sekunden).
 DEFAULT_TIMEOUT_S = 240.0
+#: Rechenkerne für Tesseract, wenn die Umgebung ``OMP_THREAD_LIMIT`` nicht setzt.
+DEFAULT_OMP_THREAD_LIMIT = "1"
 _PROBE_TIMEOUT_S = 20.0
 
 _LANG_PATTERN = re.compile(r"^[A-Za-z0-9_]+(?:\+[A-Za-z0-9_]+)*$")
@@ -59,6 +89,38 @@ MSG_NOT_INSTALLED = (
     "Bitte Tesseract installieren oder den Pfad in den Einstellungen angeben."
 )
 MSG_NOT_STARTABLE = "Tesseract konnte nicht gestartet werden. Bitte Installation und Pfad prüfen."
+ROTATED_WARNING = (
+    "Die Seite war gedreht ({rotation}°) und wurde für die Texterkennung automatisch ausgerichtet."
+)
+DENOISED_WARNING = (
+    "Die Seite war stark verrauscht. Für die Texterkennung wurde ein Rauschfilter verwendet – "
+    "bitte Werte sorgfältig prüfen."
+)
+
+
+def subprocess_env() -> dict[str, str]:
+    """Umgebung für den Tesseract-Aufruf: wie der eigene Prozess, aber mit Thread-Begrenzung.
+
+    ``OMP_THREAD_LIMIT`` wird nur ergänzt, wenn es nicht schon gesetzt ist.
+    ``os.environ`` selbst bleibt unverändert.
+    """
+    env = dict(os.environ)
+    if not env.get("OMP_THREAD_LIMIT", "").strip():
+        env["OMP_THREAD_LIMIT"] = DEFAULT_OMP_THREAD_LIMIT
+    return env
+
+
+def looks_sideways(words: list[Word]) -> bool:
+    """Stehen die Wörter überwiegend hochkant (Seite um 90° oder 270° gedreht)?
+
+    Betrachtet werden nur Wörter ab 4 Zeichen: Sie sind bei normaler Lage
+    deutlich breiter als hoch.
+    """
+    long_words = [w for w in words if len(w.text.strip()) >= 4 and w.bbox.width > 0 and w.bbox.height > 0]
+    if len(long_words) < SIDEWAYS_MIN_WORDS:
+        return False
+    tall = sum(1 for w in long_words if w.bbox.height > 1.5 * w.bbox.width)
+    return tall / len(long_words) >= SIDEWAYS_MIN_SHARE
 
 
 def _fallback_paths() -> list[Path]:
@@ -100,13 +162,21 @@ class _Attempt:
     words: list[Word] = field(default_factory=list)
     text: str = ""
     mean_confidence: float | None = None
+    denoised: bool = False
 
     @property
     def score(self) -> float:
         if self.mean_confidence is None:
             return 0.0
         chars = text_statistics(self.text).meaningful_chars
-        return self.mean_confidence * min(1.0, chars / 20.0)
+        return self.mean_confidence * min(1.0, chars / float(WEAK_TEXT_CHARS))
+
+    @property
+    def weak(self) -> bool:
+        """Keine Wörter, sehr wenig Text oder niedrige mittlere Konfidenz."""
+        if self.mean_confidence is None or self.mean_confidence < OSD_RETRY_CONFIDENCE:
+            return True
+        return text_statistics(self.text).meaningful_chars < WEAK_TEXT_CHARS
 
 
 @dataclass(frozen=True)
@@ -177,6 +247,7 @@ class TesseractBackend:
                 capture_output=True,
                 timeout=timeout,
                 check=False,
+                env=subprocess_env(),
                 **kwargs,  # type: ignore[arg-type]
             )
         except subprocess.TimeoutExpired as exc:
@@ -316,13 +387,25 @@ class TesseractBackend:
         return rotation if rotation in (90, 180, 270) else None
 
     def _attempt(
-        self, command: str, gray: Image.Image, dpi: float, rotation: int, frame_w: float, frame_h: float
+        self,
+        command: str,
+        gray: Image.Image,
+        dpi: float,
+        rotation: int,
+        page_width: float,
+        page_height: float,
     ) -> _Attempt:
-        upscaled, factor = upscale_if_small(gray, dpi)
+        """Ein Erkennungslauf; ``rotation`` = Aufrichtung im Uhrzeigersinn vor dem Lauf.
+
+        Die Wortboxen liegen danach wieder im Koordinatensystem der übergebenen
+        (nicht aufgerichteten) Seite.
+        """
+        upright = gray.rotate(-rotation, expand=True) if rotation else gray
+        upscaled, factor = upscale_if_small(upright, dpi)
         straight, angle = deskew(upscaled)
         center_x, center_y = straight.width / 2.0, straight.height / 2.0
-        scale_x = frame_w / gray.width
-        scale_y = frame_h / gray.height
+        scale_x = page_width / gray.width
+        scale_y = page_height / gray.height
 
         words: list[Word] = []
         line_index: dict[tuple[int, int, int], int] = {}
@@ -334,6 +417,9 @@ class TesseractBackend:
             ]
             xs = [c[0] / factor for c in corners]
             ys = [c[1] / factor for c in corners]
+            x0, y0, x1, y1 = rotate_box_back(
+                min(xs), min(ys), max(xs), max(ys), rotation, gray.width, gray.height
+            )
             key = (pw.block, pw.paragraph, pw.line)
             if key not in line_index:
                 line_index[key] = lines_per_block.get(pw.block, 0)
@@ -341,7 +427,7 @@ class TesseractBackend:
             words.append(
                 Word(
                     text=pw.text,
-                    bbox=scale_bbox(min(xs), min(ys), max(xs), max(ys), scale_x, scale_y, frame_w, frame_h),
+                    bbox=scale_bbox(x0, y0, x1, y1, scale_x, scale_y, page_width, page_height),
                     confidence=round(pw.confidence, 4),
                     block_no=max(pw.block - 1, 0),
                     line_no=line_index[key],
@@ -349,12 +435,47 @@ class TesseractBackend:
             )
         return _Attempt(
             rotation=rotation,
-            width=frame_w,
-            height=frame_h,
+            width=page_width,
+            height=page_height,
             words=words,
             text=words_to_text(words),
             mean_confidence=weighted_mean_confidence(words),
         )
+
+    def _oriented(
+        self, command: str, gray: Image.Image, dpi: float, page_width: float, page_height: float
+    ) -> _Attempt:
+        """Erkennung mit Prüfung der Seitenlage (siehe Moduldokumentation, Schritt 3)."""
+        first = self._attempt(command, gray, dpi, 0, page_width, page_height)
+        sideways = looks_sideways(first.words)
+        if not (first.weak or sideways):
+            return first
+
+        def run(rotation: int) -> _Attempt:
+            return self._attempt(command, gray, dpi, rotation, page_width, page_height)
+
+        if "osd" in self._probe().languages:
+            upscaled, _ = upscale_if_small(gray, dpi)
+            rotation = self._osd_rotation(command, upscaled)
+            if not rotation:
+                return first
+            retry = run(rotation)
+            # Hochkant gelesener Text hat oft selbst eine hohe Konfidenz: Bestätigt OSD die
+            # Querlage, genügt ein etwa gleich gutes Ergebnis der aufgerichteten Seite.
+            confirmed = sideways and rotation in (90, 270)
+            if retry.score > first.score or (confirmed and retry.score >= 0.9 * first.score):
+                return retry
+            return first
+
+        # Ohne OSD: Drehungen ausprobieren. Nur eine klar beste Drehung gilt.
+        candidates = [90, 270] if sideways else [180, 90, 270]
+        tries = sorted((run(r) for r in candidates), key=lambda a: a.score, reverse=True)
+        top, second = tries[0], tries[1]
+        if top.score - second.score < ROTATION_CLEAR_MARGIN:
+            return first
+        if sideways:
+            return top if top.score >= 0.9 * first.score else first
+        return top if top.score - first.score >= ROTATION_CLEAR_MARGIN else first
 
     def recognize(
         self,
@@ -372,35 +493,29 @@ class TesseractBackend:
             raise OcrError("Das Seitenbild ist leer.")
         started = time.perf_counter()
         gray = to_grayscale(image)
-        best = self._attempt(probe.command, gray, dpi, 0, page_width, page_height)
+        best = self._oriented(probe.command, gray, dpi, page_width, page_height)
 
-        if best.mean_confidence is None or best.mean_confidence < OSD_RETRY_CONFIDENCE:
-            upscaled, _ = upscale_if_small(gray, dpi)
-            rotation = self._osd_rotation(probe.command, upscaled)
-            if rotation:
-                upright = gray.rotate(-rotation, expand=True)
-                frame_w, frame_h = (
-                    (page_height, page_width) if rotation in (90, 270) else (page_width, page_height)
-                )
-                retry = self._attempt(probe.command, upright, dpi, rotation, frame_w, frame_h)
-                if retry.score > best.score:
-                    best = retry
+        if best.weak:
+            # Genau ein weiterer Versuch mit Rauschfilter; das bessere Ergebnis bleibt.
+            retry = self._oriented(probe.command, denoise_median(gray), dpi, page_width, page_height)
+            if retry.score > best.score:
+                retry.denoised = True
+                best = retry
 
         quality, warnings = assess_text_quality(
             best.text, best.words, TextLayerOrigin.OCR, best.mean_confidence, self.settings
         )
+        if best.denoised:
+            warnings = [DENOISED_WARNING, *warnings]
         if best.rotation:
-            warnings = [
-                f"Die Seite war gedreht ({best.rotation}°) und wurde für die Texterkennung "
-                "automatisch ausgerichtet.",
-                *warnings,
-            ]
+            warnings = [ROTATED_WARNING.format(rotation=best.rotation), *warnings]
         log.info(
-            "OCR Seite %d: woerter=%d konfidenz=%s drehung=%d dauer=%.2fs",
+            "OCR Seite %d: woerter=%d konfidenz=%s drehung=%d rauschfilter=%s dauer=%.2fs",
             page_number,
             len(best.words),
             f"{best.mean_confidence:.2f}" if best.mean_confidence is not None else "-",
             best.rotation,
+            "ja" if best.denoised else "nein",
             time.perf_counter() - started,
         )
         return PageText(
@@ -416,5 +531,6 @@ class TesseractBackend:
             warnings=warnings,
             engine_version=self.engine_version,
             source_dpi=float(dpi),
-            rotation=best.rotation,
+            # Koordinaten liegen im System der übergebenen Seite -> keine zusätzliche Drehung
+            rotation=0,
         )

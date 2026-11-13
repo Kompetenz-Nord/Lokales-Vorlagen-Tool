@@ -35,6 +35,8 @@ class CatalogPage(QWidget):
 
     #: Wunsch, einen Eintrag im Vorlagen-Studio zu öffnen (Katalog-ID)
     studio_requested = Signal(str)
+    #: Wunsch, für einen Eintrag ohne Originalvorlage den Import im Studio zu starten (Katalog-ID)
+    import_requested = Signal(str)
 
     def __init__(
         self,
@@ -42,12 +44,14 @@ class CatalogPage(QWidget):
         current_case_id: Callable[[], str | None],
         use_template: Callable[[str], None],
         open_studio: Callable[[str], None] | None = None,
+        import_original: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__()
         self.service = service
         self._current_case_id = current_case_id
         self._use_template = use_template
         self._open_studio = open_studio
+        self._import_original = import_original
         self.choices: list[TemplateChoice] = []
         self.tiles: dict[str, TemplateTile] = {}
 
@@ -138,7 +142,7 @@ class CatalogPage(QWidget):
             grid.setHorizontalSpacing(12)
             grid.setVerticalSpacing(12)
             for idx, choice in enumerate(members):
-                tile = TemplateTile(choice, self._on_use, self._on_studio)
+                tile = TemplateTile(choice, self._on_use, self._on_studio, self._on_import)
                 self.tiles[choice.catalog_id] = tile
                 grid.addWidget(tile, idx // 2, idx % 2)
             grid.setColumnStretch(0, 1)
@@ -196,3 +200,13 @@ class CatalogPage(QWidget):
             select = getattr(pages["studio"], "select_entry", None)
             if callable(select):
                 select(catalog_id)
+
+    def _on_import(self, catalog_id: str) -> None:
+        """„Originalvorlage importieren …“: ins Studio wechseln, Eintrag für den Import vorwählen."""
+        self.import_requested.emit(catalog_id)
+        if self._import_original is not None:
+            self._import_original(catalog_id)
+            return
+        if self.receivers(SIGNAL("import_requested(QString)")) > 0:
+            return
+        self._on_studio(catalog_id)  # Ersatzweg: Eintrag wenigstens im Studio öffnen

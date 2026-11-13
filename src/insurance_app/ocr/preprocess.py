@@ -1,4 +1,4 @@
-"""Bildvorverarbeitung für die Texterkennung (Graustufen, Vergrößern, Begradigen).
+"""Bildvorverarbeitung für die Texterkennung (Graustufen, Vergrößern, Begradigen, Entrauschen).
 
 Alle Funktionen arbeiten im Speicher und verändern das übergebene Bild nicht.
 
@@ -12,7 +12,7 @@ from __future__ import annotations
 import math
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from ..documents.pages import to_rgb
 
@@ -160,3 +160,40 @@ def rotate_point_back(
     cos_a, sin_a = math.cos(rad), math.sin(rad)
     dx, dy = x - center_x, y - center_y
     return center_x + dx * cos_a - dy * sin_a, center_y + dx * sin_a + dy * cos_a
+
+
+def denoise_median(image: Image.Image, size: int = 3) -> Image.Image:
+    """Punktrauschen („Salz und Pfeffer“) mit einem Medianfilter dämpfen.
+
+    Der Filter ersetzt jeden Bildpunkt durch den mittleren Wert seiner
+    ``size`` × ``size`` Nachbarn. Einzelne Störpunkte verschwinden, Buchstaben
+    bleiben erhalten. ``size`` muss ungerade und mindestens 3 sein. Das Bild
+    behält seine Größe; das Original bleibt unverändert.
+    """
+    if size < 3 or size % 2 == 0:
+        raise ValueError("Die Filtergröße muss ungerade und mindestens 3 sein.")
+    if image.width < size or image.height < size:
+        return image.copy()
+    return to_grayscale(image).filter(ImageFilter.MedianFilter(size))
+
+
+def rotate_box_back(
+    x0: float, y0: float, x1: float, y1: float, rotation: int, width: float, height: float
+) -> tuple[float, float, float, float]:
+    """Box aus einem aufgerichteten Bild ins Ausgangsbild zurückrechnen.
+
+    ``rotation``: Drehung im Uhrzeigersinn (0/90/180/270), mit der das
+    Ausgangsbild (``width`` × ``height``) aufgerichtet wurde – also
+    ``image.rotate(-rotation, expand=True)``. Rückgabe: (x0, y0, x1, y1) im
+    Ausgangsbild, Bildkoordinaten (y nach unten).
+    """
+    rotation %= 360
+    if rotation == 90:
+        return y0, height - x1, y1, height - x0
+    if rotation == 180:
+        return width - x1, height - y1, width - x0, height - y0
+    if rotation == 270:
+        return width - y1, x0, width - y0, x1
+    if rotation:
+        raise ValueError("Nur Drehungen um 0, 90, 180 oder 270 Grad werden unterstützt.")
+    return x0, y0, x1, y1

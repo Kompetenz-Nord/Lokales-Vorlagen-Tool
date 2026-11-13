@@ -96,7 +96,7 @@ class _FitTable(QTableWidget):
     def schedule_fit(self) -> None:
         if not self._fit_pending:
             self._fit_pending = True
-            QTimer.singleShot(0, self.refit)
+            QTimer.singleShot(0, self, self.refit)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 (Qt-API)
         super().resizeEvent(event)

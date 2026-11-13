@@ -32,10 +32,15 @@ from .. import theme
 from ..widgets.common import section_title
 from .common import error_text, pil_to_qimage
 from .formatting import candidate_display, currency_of, method_text, page_origin
+from .importing import unlock_document
 
 log = logging.getLogger(__name__)
 
 PAGE_DPI = 110
+LOCKED_PDF_TEXT = (
+    "🔒 Dieses PDF ist passwortgeschützt. Die App speichert Passwörter nie – nach einem Neustart "
+    "bitte erneut eingeben, damit die Quellseite angezeigt werden kann."
+)
 
 
 @dataclass
@@ -209,6 +214,16 @@ class EvidenceView(QWidget):
         self.quote.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self.quote.setObjectName("Muted")
         layout.addWidget(self.quote)
+        self.unlock_btn = QPushButton("🔒 Passwort eingeben …")
+        self.unlock_btn.setAccessibleName("Passwort für das geschützte Dokument eingeben")
+        self.unlock_btn.setToolTip(
+            "Passwörter werden nie gespeichert. Nach einem Neustart bitte erneut eingeben, "
+            "damit die Quellseite angezeigt werden kann."
+        )
+        self.unlock_btn.clicked.connect(self._unlock_clicked)
+        self.unlock_btn.hide()
+        layout.addWidget(self.unlock_btn)
+        self._password_declined: set[str] = set()  # nicht bei jeder Zeile erneut nachfragen
         self._set_empty("Bitte eine Zeile in der Tabelle auswählen.")
 
     # ------------------------------------------------------------------
@@ -230,6 +245,7 @@ class EvidenceView(QWidget):
         self.canvas.set_page(None, [])
         self.caption.setText("")
         self.quote.setText("")
+        self.unlock_btn.hide()
 
     def show_field(self, case: Case, key: str) -> None:
         if case is not self.case:
@@ -279,6 +295,23 @@ class EvidenceView(QWidget):
             self._cache.popitem(last=False)
         return qimg
 
+    def _ensure_unlocked(self, document_id: str, *, ask_again: bool = False) -> bool:
+        """Geschütztes PDF: Passwort (nie gespeichert) einmal je Dokument erneut abfragen."""
+        if self.case is None or not self.service.document_needs_password(self.case, document_id):
+            return True
+        if document_id in self._password_declined and not ask_again:
+            return False
+        if unlock_document(self, self.service, self.case, document_id):
+            self._password_declined.discard(document_id)
+            return True
+        self._password_declined.add(document_id)
+        return False
+
+    def _unlock_clicked(self) -> None:
+        it = self.current_item()
+        if it is not None and self._ensure_unlocked(it.document_id, ask_again=True):
+            self._show_current()
+
     def _scale(self, document_id: str, page: int, image: QImage) -> float:
         """Pixel je Seitenpunkt (über die gelesene Seitenbreite; Rückfall dpi/72)."""
         doc = self.case.document(document_id) if self.case else None
@@ -300,9 +333,18 @@ class EvidenceView(QWidget):
         self.quote.setText(
             f"Textausschnitt: „{it.quote}“" if it.quote else "Kein Textausschnitt gespeichert."
         )
+        self.unlock_btn.hide()
         if not it.page:
             self.canvas.set_page(None, [])
             self.zoom_btn.setEnabled(False)
+            return
+        if not self._ensure_unlocked(it.document_id):
+            self.canvas.set_page(None, [])
+            self.zoom_btn.setEnabled(False)
+            self.quote.setText(
+                LOCKED_PDF_TEXT + (f"\nGespeicherter Textausschnitt: „{it.quote}“" if it.quote else "")
+            )
+            self.unlock_btn.show()
             return
         try:
             image = self._page_image(it.document_id, it.page)

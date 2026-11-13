@@ -11,8 +11,9 @@ Verträge zwischen Seiten (Konstruktoren)
 * ``DashboardPage(service, open_case: Callable[[str], None], open_bundle: Callable[[str, list[Path]], None])``
 * ``BundlesPage(service, open_case: Callable[[str], None])`` mit ``select_bundle(id)`` und ``start_import(paths)``
 * ``CaseView(service, show_catalog: Callable[[], None])`` mit ``open_case(case_id)`` und Signal ``case_changed(str)``
-* ``CatalogPage(service, current_case_id: Callable[[], str | None], use_template: Callable[[str], None])``
-* ``StudioPage(service)``; ``SettingsPage(service)``
+* ``CatalogPage(service, current_case_id: Callable[[], str | None], use_template: Callable[[str], None],
+  open_studio: Callable[[str], None], import_original: Callable[[str], None])``
+* ``StudioPage(service)`` mit ``select_entry(id)`` und ``prepare_import(id)``; ``SettingsPage(service)``
 Jede Seite bietet ``refresh()`` (wird beim Anzeigen aufgerufen).
 """
 
@@ -101,7 +102,11 @@ class MainWindow(QMainWindow):
             "bundles": BundlesPage(service, open_case=self.open_case),
             "case": self.case_view,
             "catalog": CatalogPage(
-                service, current_case_id=self.current_case_id, use_template=self.use_template
+                service,
+                current_case_id=self.current_case_id,
+                use_template=self.use_template,
+                open_studio=self.open_studio,
+                import_original=self.open_studio_import,
             ),
             "studio": StudioPage(service),
             "settings": SettingsPage(service),
@@ -141,6 +146,16 @@ class MainWindow(QMainWindow):
         page.select_bundle(bundle_id)
         if paths:
             page.start_import(list(paths))
+
+    def open_studio(self, catalog_id: str) -> None:
+        """Vorlagen-Studio mit diesem Katalogeintrag zeigen."""
+        self.show_section("studio")
+        self.pages["studio"].select_entry(catalog_id)
+
+    def open_studio_import(self, catalog_id: str) -> None:
+        """Vorlagen-Studio zeigen; der Eintrag ist für „Originalvorlage importieren …“ vorgewählt."""
+        self.show_section("studio")
+        self.pages["studio"].prepare_import(catalog_id)
 
     def current_case_id(self) -> str | None:
         return self.case_view.current_case_id()

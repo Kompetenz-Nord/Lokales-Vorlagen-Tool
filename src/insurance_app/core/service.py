@@ -119,6 +119,8 @@ class SettingsError(ServiceError, ValueError):
 
 DEFAULT_NOTE = "Vorschlag der Vorlage – bitte prüfen"
 SOURCE_REMOVED_NOTE = "Die Quelle dieses Werts wurde entfernt – bitte erneut prüfen."
+#: Kennzeichnung an ``case.template_version``, wenn die importierte Version entfernt wurde
+REMOVED_VERSION_SUFFIX = " (entfernt)"
 
 
 # ---------------------------------------------------------------------------
@@ -513,6 +515,42 @@ class AppService:
 
     def set_document_password(self, document_id: str, password: str) -> None:
         self._passwords[document_id] = password
+
+    def documents_needing_password(self, case: Case, *, only_unread: bool = False) -> list[SourceDocument]:
+        """Geschützte PDFs des Vorgangs, für die in dieser Sitzung noch kein Passwort vorliegt.
+
+        Passwörter werden absichtlich nie gespeichert – nach einem Neustart fehlen sie also.
+        ``only_unread``: nur Dokumente, deren Text noch nicht gelesen wurde.
+        """
+        return [
+            d
+            for d in case.active_documents()
+            if d.check is not None
+            and d.check.needs_password
+            and d.id not in self._passwords
+            and not (only_unread and d.text is not None)
+        ]
+
+    def document_needs_password(self, case: Case, document_id: str) -> bool:
+        doc = case.document(document_id)
+        return bool(
+            doc is not None
+            and doc.check is not None
+            and doc.check.needs_password
+            and doc.id not in self._passwords
+        )
+
+    def unlock_document(self, case: Case, document_id: str, password: str) -> bool:
+        """Passwort an der gespeicherten Kopie prüfen und nur für diese Sitzung merken (Arbeitsspeicher)."""
+        doc = self._doc(case, document_id)
+        if not password:
+            return False
+        check = check_document(Path(doc.stored_path), password=password)
+        codes = {i.code for i in check.issues}
+        if "PASSWORD_REQUIRED" in codes or "WRONG_PASSWORD" in codes:
+            return False
+        self._passwords[doc.id] = password
+        return True
 
     def _repoint_document_values(self, case: Case, old_id: str, new_id: str) -> None:
         """Belege auf ein inhaltsgleiches Duplikat umhängen (gleiche SHA-256)."""
@@ -1282,6 +1320,67 @@ class AppService:
                 )
             )
         return sorted(out, key=lambda c: c.number)
+
+    # -- Importierte Vorlagenversion entfernen ---------------------------------
+    def _is_version_in_use(self, catalog_id: str, version: str) -> bool:
+        """Ist die importierte ``version`` gerade die verwendete Version des Katalogeintrags?"""
+        try:
+            report = self.registry.verify(catalog_id)
+        except TemplateRegistryError:
+            return False
+        return report.version == version and report.source == "importiert" and report.pdf_path is not None
+
+    def cases_using_template_version(self, catalog_id: str, version: str) -> list[str]:
+        """IDs der Vorgänge (auch archivierte), die mit dieser importierten Version arbeiten."""
+        if not self._is_version_in_use(catalog_id, version):
+            return []
+        out: list[str] = []
+        for summary in self.list_cases(include_archived=True):
+            if summary.template_id != catalog_id:
+                continue
+            try:
+                case = self.load_case(summary.id)
+            except Exception as exc:  # noqa: BLE001 – beschädigter Vorgang darf nicht stören
+                log.warning("Vorgang nicht lesbar (%s)", type(exc).__name__)
+                continue
+            if case.template_version == version:
+                out.append(case.id)
+        return out
+
+    def remove_imported_template_version(self, catalog_id: str, version: str) -> list[str]:
+        """Selbst importierte Vorlagenversion löschen; mitgelieferte Originale nie.
+
+        Vorgänge, die mit dieser Version gearbeitet haben, behalten Vorlage und Werte, werden
+        aber so markiert, dass die Checkliste „Vorlage wurde geändert – bitte erneut auswählen“
+        meldet (``TEMPLATE_VERSION_CHANGED``, blockiert die PDF-Erzeugung). Das gilt auch, wenn
+        eine andere Version zufällig gleich heißt. Bereits erzeugte PDFs und das Exportprotokoll
+        bleiben unverändert. Rückgabe: IDs der betroffenen Vorgänge.
+        """
+        affected = self.cases_using_template_version(catalog_id, version)
+        try:
+            self.registry.remove_imported_version(catalog_id, version)
+        except TemplateRegistryError as exc:
+            raise ServiceError(exc.user_message) from exc
+        marker = f"{version}{REMOVED_VERSION_SUFFIX}"
+        for case_id in affected:
+            try:
+                case = self.load_case(case_id)
+                case.template_version = marker
+                case.add_history(
+                    HistoryEntry(
+                        actor="system",
+                        action="template_version_removed",
+                        detail=f"{catalog_id} ({version})",
+                    )
+                )
+                self.save_case(case)
+                self.discard_preview(case_id)
+            except Exception as exc:  # noqa: BLE001 – übrige Vorgänge trotzdem markieren
+                log.warning("Vorgang nicht markiert (%s)", type(exc).__name__)
+        log.info(
+            "Vorlagenversion entfernt: katalog=%s version=%s vorgänge=%d", catalog_id, version, len(affected)
+        )
+        return affected
 
     def _try_active_template(self, catalog_id: str) -> ActiveTemplate | None:
         try:

@@ -281,7 +281,7 @@ class ReviewTable(QWidget):
     def _schedule_heights(self) -> None:
         if not self._heights_pending:
             self._heights_pending = True
-            QTimer.singleShot(0, self._relayout_heights)
+            QTimer.singleShot(0, self, self._relayout_heights)
 
     def _relayout_heights(self) -> None:
         """Zeilenhöhen für umbrochene Texte berechnen (QTreeView berücksichtigt Umbruch nicht selbst)."""

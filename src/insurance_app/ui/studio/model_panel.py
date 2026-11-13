@@ -411,7 +411,7 @@ class LocalAiPanel(QWidget):
             "Ungefähre Downloadgröße; „laut Ollama-Registry“ = aus dem Registry-Manifest übernommen"
         )
         self.model_table = table
-        hdr.sectionResized.connect(lambda *_: QTimer.singleShot(0, self._fit_table))
+        hdr.sectionResized.connect(lambda *_: QTimer.singleShot(0, self, self._fit_table))
         self.pull_buttons: dict[str, QPushButton] = {}
         self.remove_buttons: dict[str, QPushButton] = {}
         for row, (name, entry) in enumerate(MODEL_CATALOG.items()):
@@ -447,7 +447,7 @@ class LocalAiPanel(QWidget):
             self.pull_buttons[name] = pull
             self.remove_buttons[name] = remove
         layout.addWidget(table)
-        QTimer.singleShot(0, self._fit_table)
+        QTimer.singleShot(0, self, self._fit_table)
 
     def _fit_table(self) -> None:
         if not isValid(self):
@@ -462,7 +462,7 @@ class LocalAiPanel(QWidget):
 
     def showEvent(self, event) -> None:  # noqa: N802 (Qt-API)
         super().showEvent(event)
-        QTimer.singleShot(0, self._fit_table)
+        QTimer.singleShot(0, self, self._fit_table)
 
     # ------------------------------------------------------------------
     # Einstellungen lesen
@@ -701,7 +701,7 @@ class LocalAiPanel(QWidget):
             item.setText(text)
             item.setForeground(QBrush(QColor(color)))
         self._update_buttons()
-        QTimer.singleShot(0, self._fit_table)
+        QTimer.singleShot(0, self, self._fit_table)
 
     def is_installed(self, name: str) -> bool | None:
         if not (self.status and self.status.get("running")) or name not in self.installed:

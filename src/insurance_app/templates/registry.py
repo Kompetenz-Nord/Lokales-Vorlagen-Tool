@@ -721,6 +721,36 @@ class TemplateRegistry:
             "Feldzuordnung gespeichert: katalog=%s version=%s bestätigt=%s", catalog_id, version, confirmed
         )
 
+    def remove_imported_version(self, catalog_id: str, version: str) -> TemplateVersionInfo:
+        """Eine selbst importierte Version löschen (Ordner unter ``user_templates_dir``).
+
+        Mitgelieferte Originalvorlagen (Programmdateien) werden nie gelöscht: Gibt es zu
+        ``version`` keinen importierten Ordner, wird abgelehnt. Bereits erzeugte PDFs und
+        Vorgänge werden hier nicht angefasst.
+        """
+        self.entry(catalog_id)  # unbekannte Katalog-ID ablehnen
+        name = _check_version(version)
+        info = next((v for v in self._imported(catalog_id) if v.version == name), None)
+        base = self._user_dir(catalog_id).resolve()
+        vdir = (base / name).resolve()
+        if info is None or vdir.parent != base or not (vdir / "meta.json").is_file():
+            if any(v.version == name for v in self.list_versions(catalog_id)):
+                raise TemplateRegistryError(
+                    "Mitgelieferte Originalvorlagen gehören zum Programm und können nicht entfernt werden."
+                )
+            raise TemplateNotAvailableError("Diese importierte Vorlagenversion ist nicht vorhanden.")
+        _remove_tree(vdir)
+        if vdir.exists():
+            raise TemplateRegistryError(
+                "Die Vorlagenversion konnte nicht vollständig entfernt werden. "
+                "Bitte schließen Sie Programme, die die Datei geöffnet haben, und versuchen Sie es erneut."
+            )
+        with contextlib.suppress(OSError):
+            base.rmdir()  # nur wenn leer
+        self._invalidate(catalog_id)
+        log.info("Importierte Vorlagenversion entfernt: katalog=%s version=%s", catalog_id, name)
+        return info
+
     # -- Pakete -------------------------------------------------------------------
     def export_package(self, catalog_id: str, dest_zip: Path, version: str | None = None) -> Path:
         """Version als ZIP-Paket (manifest.json, mapping.json, original.pdf) speichern."""

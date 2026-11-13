@@ -25,6 +25,7 @@ from ..case.common import error_text
 from ..case.controller import CaseController
 from ..case.documents_panel import DocumentsPanel
 from ..case.history_panel import HistoryPanel
+from ..case.importing import LOCKED_SKIPPED_NOTE, ensure_passwords
 from ..case.preview_panel import PreviewPanel
 from ..case.review_panel import ReviewPanel
 from ..case.stepper import StageStepper
@@ -218,9 +219,13 @@ class CaseView(QWidget):
             )
             return
 
+        # Passwörter werden nie gespeichert: nach einem Neustart vor dem Lesen erneut abfragen
+        skipped = ensure_passwords(self, self.service, case, only_unread=True)
+        missing = [LOCKED_SKIPPED_NOTE.format(name=name) for name in skipped]
+
         def done(result: object) -> None:
             notes, summary = result if isinstance(result, tuple) else ([], None)
-            self.documents.set_result(list(notes), summary)
+            self.documents.set_result(missing + list(notes), summary)
 
         def failed(exc: BaseException, cancelled: bool) -> None:
             if cancelled:
