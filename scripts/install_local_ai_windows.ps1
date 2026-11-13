@@ -293,9 +293,9 @@ if ($nvidia.Count -gt 0) {
     if ($smi) {
         $smiPath = if ($smi.Path) { $smi.Path } else { $smi.Definition }
         # compute_cap kennen nur neuere Treiber; sonst ohne dieses Feld erneut fragen
-        $out = @(& $smiPath --query-gpu=name,driver_version,memory.total,compute_cap --format=csv,noheader,nounits 2> $null)
+        $out = @(& $smiPath '--query-gpu=name,driver_version,memory.total,compute_cap' '--format=csv,noheader,nounits' 2> $null)
         if ($LASTEXITCODE -ne 0 -or $out.Count -eq 0) {
-            $out = @(& $smiPath --query-gpu=name,driver_version,memory.total --format=csv,noheader,nounits 2> $null)
+            $out = @(& $smiPath '--query-gpu=name,driver_version,memory.total' '--format=csv,noheader,nounits' 2> $null)
         }
         $line = $null
         if ($LASTEXITCODE -eq 0 -and $out.Count -gt 0) { $line = $out[0] }
@@ -639,8 +639,8 @@ Write-Ok ("Fertig ({0} Warnung(en), {1} Modell(e) uebersprungen)." -f $script:Wa
 Write-Host ''
 Write-Host 'Naechste Schritte in der App:'
 Write-Host '  "Einstellungen & Datenschutz" -> "Lokale KI (optional)"'
-Write-Host "  -> Profil '$KiProfil' uebernehmen (oder 'Aktives Modell', 'Ausweichmodell', 'Gegenpruefung' selbst waehlen)"
-Write-Host '  -> "Lokale KI aktivieren" -> "Lokale Laufzeit testen".'
+Write-Host "  -> Profil '$KiProfil' uebernehmen (oder unter 'Modellauswahl': 'Aktives Modell', 'Ausweichmodell', 'Gegenpruefung')"
+Write-Host '  -> "Lokale KI aktivieren" -> "Status pruefen".'
 Write-Host 'Optional im Terminal ausprobieren (Beenden mit /bye):  ollama run qwen3-vl:4b'
 Write-Host 'Anleitung: docs\LOKALE_KI.md'
 exit 0

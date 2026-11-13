@@ -73,7 +73,10 @@ class ModelCatalogEntry(BaseModel):
     note: str = UNVERIFIED_NOTE
     role: str = ""  # Aufgabe in der App
     advantages: str = ""  # Vorteil gegenüber den anderen Modellen
-    num_ctx: int = 16384  # Kontextfenster für Bildanfragen (Ollama-Standard 4096 reicht für Bilder nicht)
+    num_ctx: int = 8192  # Kontextfenster: Seite (~2.400 Token) + Antwort; 16k verdoppelt den RAM-Bedarf (gemessen 5,9 GB)
+    thinking: bool = (
+        False  # Denkmodell: erzeugt vor der Antwort einen langen Denkprozess (ohne GPU sehr langsam)
+    )
     kind: str = "vlm"  # "ocr" (liefert Text -> Regel-Extraktion) | "vlm" (liefert Felder als JSON mit Zitat)
     sources: tuple[str, ...] = ()  # Quellen der Größenangaben (nur Information)
 
@@ -99,19 +102,40 @@ MODEL_CATALOG: dict[str, ModelCatalogEntry] = {
             "https://huggingface.co/docs/transformers/main/en/model_doc/glm_ocr",
         ),
     ),
+    "qwen3-vl:4b-instruct": ModelCatalogEntry(
+        name="qwen3-vl:4b-instruct",
+        label="Qwen3-VL 4B Instruct (Bildanalyse ohne Denkprozess – empfohlenes Ausweichmodell)",
+        approx_download_gb=3.34,
+        verified=True,
+        note=(
+            "Größe laut Ollama-Registry-Manifest (abgerufen am 13.11.2026). "
+            "Gemessen auf 4 CPU-Kernen ohne GPU: ca. 256 s pro Seite."
+        ),
+        min_ram_gb=8.0,
+        recommended_ram_gb=16.0,
+        license_hint="Apache 2.0 (laut Ollama-Manifest)",
+        role="Feldextraktion aus Seitenbildern als strukturiertes JSON mit wörtlichem Zitat als Beleg",
+        advantages=(
+            "Gleiches Modell wie qwen3-vl:4b, aber ohne vorgeschalteten Denkprozess: antwortet direkt im "
+            "geforderten JSON-Format und ist deshalb auf Rechnern ohne Grafikkarte deutlich schneller."
+        ),
+        sources=("https://docs.ollama.com/capabilities/thinking.md",),
+    ),
     "qwen3-vl:4b": ModelCatalogEntry(
         name="qwen3-vl:4b",
-        label="Qwen3-VL 4B (präzise visuelle PDF- und Bildanalyse)",
+        label="Qwen3-VL 4B (Denkvariante – nur mit Grafikkarte empfohlen)",
+        thinking=True,
         approx_download_gb=3.34,
         verified=True,
         note="Größe laut Ollama-Registry-Manifest (abgerufen am 13.11.2026).",
         min_ram_gb=8.0,
         recommended_ram_gb=16.0,
         license_hint="Apache 2.0 (laut Ollama-Manifest)",
-        role="Feldextraktion aus Seitenbildern als strukturiertes JSON mit wörtlichem Zitat als Beleg",
+        role="Feldextraktion aus Seitenbildern (mit vorgeschaltetem Denkprozess)",
         advantages=(
-            "Versteht Layout und Bildinhalt gemeinsam und ordnet Werte direkt den Feldern zu; "
-            "guter Kompromiss aus Genauigkeit und Ressourcenbedarf."
+            "Denkt vor der Antwort nach. Achtung: Das Tag „qwen3-vl:4b“ ist in Ollama die Denkvariante; "
+            "der Denkprozess lässt sich nicht abschalten. Gemessen ohne GPU: nach 1.500 Token (520 s) noch "
+            "keine Antwort. Für die App ist „qwen3-vl:4b-instruct“ die bessere Wahl."
         ),
         sources=("https://codersera.com/blog/qwen3-vl-4b-vs-qwen3-vl-8b-benchmarks-vram-guide/",),
     ),

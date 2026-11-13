@@ -576,6 +576,18 @@ class OllamaClient:
         log.info("Strukturierte KI-Antwort erhalten (%.1f s, %d Bilder)", duration, len(images_b64))
         return parsed
 
+    def unload_model(self, name: str) -> None:
+        """Modell sofort aus dem Arbeitsspeicher entladen (``keep_alive: 0``, laut Ollama-FAQ).
+
+        Best effort: Fehler werden nur protokolliert – das Entladen ist eine Speicherschonung.
+        """
+        try:
+            self._request_json(
+                "POST", "/api/generate", {"model": validate_model_name(name), "keep_alive": 0}, timeout=30
+            )
+        except OllamaError as exc:
+            log.info("Modell konnte nicht entladen werden (%s)", type(exc).__name__)
+
     def chat_text(
         self,
         model: str,

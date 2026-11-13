@@ -5,8 +5,8 @@ Ein Profil legt fest, welche lokalen Modelle (Ollama) die App verwendet:
 | Profil   | aktiv   | Ausweichmodell | Gegenprüfung | Download (laut Registry) |
 |----------|---------|----------------|--------------|--------------------------|
 | kompakt  | glm-ocr | –              | –            | 2,66 GB |
-| standard | glm-ocr | qwen3-vl:4b    | –            | 6,00 GB |
-| maximal  | glm-ocr | qwen3-vl:4b    | gemma4:e4b   | 12,58 GB |
+| standard | glm-ocr | qwen3-vl:4b-instruct | –            | 6,00 GB |
+| maximal  | glm-ocr | qwen3-vl:4b-instruct | gemma4:e4b   | 12,58 GB |
 
 Das Profil ist nur eine **Empfehlung**: Der Anwender wählt in den Einstellungen selbst, welches
 Modell aktiv läuft und welches als Ausweichmodell einspringt.
@@ -75,11 +75,11 @@ PROFILES: dict[str, AiProfile] = {
         key="standard",
         label="Standard – GLM-OCR mit Qwen3-VL als Ausweichmodell (empfohlen)",
         description=(
-            "GLM-OCR arbeitet als aktives Modell. Fehlt es oder kann eine Seite nicht lesen, springt Qwen3-VL ein "
+            "GLM-OCR arbeitet als aktives Modell. Fehlt es oder kann eine Seite nicht lesen, springt Qwen3-VL (Instruct) ein "
             "und liest die Felder direkt aus dem Seitenbild – jeder Wert mit wörtlichem Zitat als Beleg."
         ),
         active_model="glm-ocr",
-        fallback_model="qwen3-vl:4b",
+        fallback_model="qwen3-vl:4b-instruct",
         crosscheck_model=None,
         requirement=HardwareRequirement(
             mac="Apple Silicon (M1 oder neuer) mit 16 GB gemeinsamem Arbeitsspeicher",
@@ -97,7 +97,7 @@ PROFILES: dict[str, AiProfile] = {
             "Höchste Absicherung, aber größter Speicher- und Zeitbedarf."
         ),
         active_model="glm-ocr",
-        fallback_model="qwen3-vl:4b",
+        fallback_model="qwen3-vl:4b-instruct",
         crosscheck_model="gemma4:e4b",
         requirement=HardwareRequirement(
             mac="Apple Silicon mit 32 GB gemeinsamem Arbeitsspeicher (z. B. M-Pro/Max); 16 GB möglich, aber langsamer",

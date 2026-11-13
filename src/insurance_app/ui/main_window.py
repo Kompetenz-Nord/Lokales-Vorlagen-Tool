@@ -77,7 +77,8 @@ class MainWindow(QMainWindow):
         self._nav_group = QButtonGroup(self)
         self._nav_buttons: dict[str, QPushButton] = {}
         for key, label in self.NAV:
-            btn = QPushButton(label)
+            btn = QPushButton(label.replace("&", "&&"))  # „&“ wörtlich (kein Tastenkürzel)
+            btn.setStyleSheet("padding-left: 14px; padding-right: 6px;")  # lange Bezeichnungen passen
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             btn.setAccessibleName(label.split("  ", 1)[-1])

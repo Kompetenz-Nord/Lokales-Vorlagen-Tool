@@ -1,4 +1,7 @@
-"""Einstellungen & Datenschutz: LOCAL ONLY, Ablage, OCR, lokale KI (simulierter Ollama auf 127.0.0.1)."""
+"""Einstellungen & Datenschutz: LOCAL ONLY, Ablage, OCR, Export, Exportprotokoll, Zustimmungsdialog.
+
+Die ausführlichen Tests des Bereichs „Lokale KI“ stehen in ``test_ui_settings_ai.py``.
+"""
 
 from __future__ import annotations
 
@@ -10,7 +13,6 @@ from uib_helpers import (  # noqa: F401 – Fixture wird durch Import aktiv
     apply_app_style,
     build_host,
     dispose,
-    fake_ollama,
     free_port_url,
     make_service,
     patch_dialogs,
@@ -20,9 +22,7 @@ from uib_helpers import (  # noqa: F401 – Fixture wird durch Import aktiv
 from insurance_app.core.settings import Settings
 from insurance_app.export.exporter import ExportLogEntry
 from insurance_app.ui.pages.settings import SettingsPage
-from insurance_app.ui.studio import consent_dialog
 from insurance_app.ui.studio.consent_dialog import CONSENT_TEXT, ConsentDialog, DownloadInfo
-from insurance_app.ui.studio.model_panel import CANCELLED_TEXT
 from insurance_app.ui.theme import LOCAL_ONLY_TEXT
 
 pytestmark = pytest.mark.ui
@@ -32,11 +32,6 @@ def _page(qtbot, svc) -> SettingsPage:
     page = SettingsPage(svc)
     qtbot.addWidget(page)
     return page
-
-
-def _wait_status(qtbot, page: SettingsPage) -> None:
-    page.ai_panel.check_status()
-    qtbot.waitUntil(lambda: not page.ai_panel.checking and page.ai_panel.status is not None, timeout=15_000)
 
 
 def _all_text(page) -> str:
@@ -56,10 +51,10 @@ def test_settings_shows_local_only_and_ai_disabled(qtbot, tmp_path, monkeypatch)
     assert "Keine Cloud, keine Telemetrie" in text
     assert "liegt beim Betreiber" in text
     assert "DSGVO-konform" not in text
-    assert "Deaktiviert" in page.ai_panel.state_label.text()
+    assert "ausgeschaltet" in page.ai_panel.state_label.text()
     assert page.ai_panel.state_label.text().startswith("○")  # Symbol + Text
     assert not page.ai_panel.enable_check.isChecked()
-    assert not page.ai_panel.pull_button.isEnabled()  # Ollama läuft nicht
+    assert not any(b.isEnabled() for b in page.ai_panel.pull_buttons.values())  # Ollama läuft nicht
     assert "Vorgänge" in page.storage_labels["counts"].text()
     assert page.storage_labels["data_dir"].text() == str(svc.paths.data)
     qtbot.mouseClick(page.open_data_button, Qt.MouseButton.LeftButton)
@@ -75,11 +70,11 @@ def test_toggling_ai_updates_settings(qtbot, tmp_path, monkeypatch):
     assert svc.settings.ai_enabled is True
     assert Settings.load(svc.paths.settings_file).ai_enabled is True
     qtbot.waitUntil(lambda: not page.ai_panel.checking, timeout=15_000)
-    assert "Deaktiviert" not in page.ai_panel.state_label.text()
-    page.ai_panel.model_combo.setCurrentIndex(page.ai_panel.model_combo.findData("qwen3-vl:8b"))
+    assert page.ai_panel.state_label.text() == "✖ Der lokale Ollama-Dienst läuft nicht."
+    combo = page.ai_panel.active_combo
+    combo.setCurrentIndex(combo.findData("qwen3-vl:8b"))
     assert svc.settings.ai_model == "qwen3-vl:8b"
-    assert "6,1 GB" in page.ai_panel.model_info.text()
-    assert "ungeprüft" in page.ai_panel.model_info.text()
+    assert Settings.load(svc.paths.settings_file).ai_model == "qwen3-vl:8b"
     qtbot.waitUntil(lambda: not page.ai_panel.checking, timeout=15_000)
     page.ai_panel.enable_check.setChecked(False)
     assert Settings.load(svc.paths.settings_file).ai_enabled is False
@@ -180,87 +175,6 @@ def test_consent_dialog_requires_checkbox(qtbot):
     assert dlg.ok_button.isEnabled()
     dlg._accept()
     assert dlg.consented
-
-
-def test_model_download_only_after_consent(qtbot, tmp_path, monkeypatch):
-    rec = patch_dialogs(monkeypatch)
-    lai = fake_ollama()
-    with lai.running_fake() as fake:
-        svc = make_service(tmp_path, ollama_url=fake.url, ai_enabled=True, ai_model="qwen3-vl:8b")
-        page = _page(qtbot, svc)
-        _wait_status(qtbot, page)
-        panel = page.ai_panel
-        assert panel.status.ollama_running
-        assert "nicht installiert" in panel.state_label.text()  # Modell noch nicht geladen
-        assert panel.pull_button.isEnabled()
-
-        asked: list[DownloadInfo] = []
-        answer = [False]
-
-        def fake_consent(parent, info):
-            asked.append(info)
-            return answer[0]
-
-        monkeypatch.setattr(consent_dialog, "ask_download_consent", fake_consent)
-        qtbot.mouseClick(panel.pull_button, Qt.MouseButton.LeftButton)
-        assert len(asked) == 1
-        assert asked[0].model == "qwen3-vl:8b" and asked[0].approx_gb == pytest.approx(6.1)
-        assert not panel.busy
-        assert "/api/pull" not in fake.state.paths()  # ohne Zustimmung kein Download
-
-        answer[0] = True
-        qtbot.mouseClick(panel.pull_button, Qt.MouseButton.LeftButton)
-        qtbot.waitUntil(lambda: not panel.busy, timeout=15_000)
-        assert "/api/pull" in fake.state.paths()
-        pull_body = next(b for m, p, b in fake.state.requests if p == "/api/pull")
-        assert pull_body["model"] == "qwen3-vl:8b"
-        assert not rec.errors, rec.error_text()
-        assert "abgeschlossen" in rec.info_text()
-        qtbot.waitUntil(lambda: not panel.checking, timeout=15_000)
-
-
-def test_model_download_can_be_cancelled(qtbot, tmp_path, monkeypatch):
-    rec = patch_dialogs(monkeypatch)
-    lai = fake_ollama()
-    state = lai.FakeState(pull_line_delay=0.3)
-    with lai.running_fake(state) as fake:
-        svc = make_service(tmp_path, ollama_url=fake.url, ai_enabled=True, ai_model="qwen3-vl:8b")
-        page = _page(qtbot, svc)
-        _wait_status(qtbot, page)
-        panel = page.ai_panel
-        monkeypatch.setattr(consent_dialog, "ask_download_consent", lambda parent, info: True)
-        qtbot.mouseClick(panel.pull_button, Qt.MouseButton.LeftButton)
-        assert panel.busy
-        assert "eingerichtet" in panel.state_label.text()
-        assert not panel.pull_button.isEnabled() and not panel.remove_button.isEnabled()
-        qtbot.waitUntil(lambda: "/api/pull" in fake.state.paths(), timeout=10_000)
-        panel.task.cancel.set()
-        qtbot.waitUntil(lambda: not panel.busy, timeout=15_000)
-        assert CANCELLED_TEXT in rec.info_text()
-        assert "später fortgesetzt" in rec.info_text()
-        qtbot.waitUntil(lambda: not panel.checking, timeout=15_000)
-
-
-def test_model_removal_requires_confirmation(qtbot, tmp_path, monkeypatch):
-    rec = patch_dialogs(monkeypatch)
-    lai = fake_ollama()
-    with lai.running_fake() as fake:
-        svc = make_service(tmp_path, ollama_url=fake.url, ai_enabled=True, ai_model="qwen3-vl:4b")
-        page = _page(qtbot, svc)
-        _wait_status(qtbot, page)
-        panel = page.ai_panel
-        assert "Bereit" in panel.state_label.text()
-        rec.confirm_answer = False
-        qtbot.mouseClick(panel.remove_button, Qt.MouseButton.LeftButton)
-        assert rec.confirms
-        assert "/api/delete" not in fake.state.paths()
-        rec.confirm_answer = True
-        qtbot.mouseClick(panel.remove_button, Qt.MouseButton.LeftButton)
-        qtbot.waitUntil(lambda: not panel.busy, timeout=15_000)
-        assert "/api/delete" in fake.state.paths()
-        assert "entfernt" in rec.info_text()
-        qtbot.waitUntil(lambda: not panel.checking, timeout=15_000)
-        assert "nicht installiert" in panel.state_label.text()
 
 
 def test_settings_screenshot(qtbot, tmp_path, monkeypatch):

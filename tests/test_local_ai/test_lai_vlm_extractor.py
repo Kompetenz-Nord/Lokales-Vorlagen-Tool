@@ -171,7 +171,9 @@ def test_request_uses_downscaled_png_and_schema(fake):
     assert result.ok
     _, path, body = next(r for r in fake.state.requests if r[1] == "/api/chat")
     assert path == "/api/chat"
-    assert body["options"] == {"temperature": 0, "num_predict": 300}
+    assert body["options"]["temperature"] == 0 and body["options"]["num_predict"] == 300
+    assert body["options"]["num_ctx"] >= 8192  # Bild + Schema passen nicht in den Ollama-Standard
+    assert body.get("think") is False  # keine Denkphase, die das Token-Budget aufbraucht
     assert body["format"]["properties"]["fields"]["items"]["properties"]["field_key"]["enum"] == KEYS
     assert "Seite 3" in body["messages"][1]["content"]
     assert "MUSTER.pdf" not in json.dumps(body["messages"])  # keine Dateinamen an das Modell

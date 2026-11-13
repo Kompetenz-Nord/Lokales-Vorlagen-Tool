@@ -33,7 +33,9 @@ class Settings(BaseModel):
     ai_enabled: bool = False
     ai_profile: str = "standard"  # Hardwareprofil (nur Empfehlung, siehe local_ai.profiles)
     ai_model: str = "glm-ocr"  # AKTIVES Modell – der Anwender entscheidet (Standard: glm-ocr)
-    ai_fallback_model: str | None = "qwen3-vl:4b"  # springt ein, wenn das aktive Modell fehlt/scheitert
+    ai_fallback_model: str | None = (
+        "qwen3-vl:4b-instruct"  # springt ein, wenn das aktive Modell fehlt/scheitert
+    )
     ai_crosscheck_model: str | None = None  # optionale Gegenprüfung (z. B. gemma4:e4b)
     ollama_url: str = DEFAULT_OLLAMA_URL
     ai_timeout_s: int = 600  # je Seite; auf reinen CPU-Rechnern brauchen Bildmodelle oft mehrere Minuten

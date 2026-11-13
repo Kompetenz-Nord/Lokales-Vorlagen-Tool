@@ -10,7 +10,8 @@ Die KI entscheidet nie selbst. Regeln je Ausgangsstatus:
 * ``MISSING``: → ``EXTRACTED`` mit Hinweis „Nur durch lokale KI gelesen – besonders
   sorgfältig prüfen.“ (Ist der KI-Wert nicht normalisierbar → ``UNCLEAR``.)
 * ``UNCLEAR``: Waren alle bisherigen Kandidaten unlesbar (ohne Normalwert) und ist der
-  KI-Wert lesbar → ``EXTRACTED`` mit demselben Hinweis; sonst bleibt ``UNCLEAR``.
+  KI-Wert lesbar → ``EXTRACTED`` mit demselben Hinweis. Weicht ein lesbarer KI-Wert von den
+  (unsicheren) bisherigen Werten ab → ``CONFLICT`` (beide Werte zur Auswahl); sonst bleibt ``UNCLEAR``.
 * ``CONFLICT``: bleibt ``CONFLICT``, Vorschlag wird angehängt.
 
 Auftragsdaten (``order.*``) werden mit ``ValueError`` abgelehnt. Jede Änderung
@@ -233,6 +234,25 @@ def _apply(fv: FieldValue, cand: Candidate) -> tuple[FieldValue, HistoryEntry | 
             new = _take_candidate(fv, cand, FieldStatus.EXTRACTED, NOTE_AI_ONLY)
             return new, _history(
                 "ai_extracted", key, fv, new, cand, "Texterkennung unlesbar – Wert durch lokale KI gelesen"
+            )
+        differs = cand.normalized is not None and not any(
+            c.normalized is not None and same_value(key, c.normalized, c.value, cand.normalized, cand.value)
+            for c in fv.candidates
+        )
+        if differs and fv.candidates:
+            # Unsichere Texterkennung und abweichender, lesbarer KI-Wert: beide Werte zur Auswahl stellen
+            new = fv.model_copy(
+                update={
+                    "status": FieldStatus.CONFLICT,
+                    "value": None,
+                    "normalized_value": None,
+                    "candidates": [*fv.candidates, cand],
+                    "note": NOTE_AI_CONFLICT,
+                    "suggestion_index": None,
+                }
+            )
+            return new, _history(
+                "ai_conflict", key, fv, new, cand, "Unklarer Wert – lokale KI liest einen anderen Wert"
             )
         new = fv.model_copy(update={"candidates": [*fv.candidates, cand]})
         return new, _history(

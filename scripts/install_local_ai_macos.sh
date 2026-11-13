@@ -570,8 +570,8 @@ cat <<EOF
 
 Nächste Schritte in der App:
   „Einstellungen & Datenschutz“ → „Lokale KI (optional)“
-  → Profil „$PROFILE“ übernehmen (oder „Aktives Modell“, „Ausweichmodell“, „Gegenprüfung“ selbst wählen)
-  → „Lokale KI aktivieren“ → „Lokale Laufzeit testen“.
+  → Profil „$PROFILE“ übernehmen (oder unter „Modellauswahl“: „Aktives Modell“, „Ausweichmodell“, „Gegenprüfung“)
+  → „Lokale KI aktivieren“ → „Status prüfen“.
 Optional im Terminal ausprobieren (Beenden mit /bye):  ollama run qwen3-vl:4b
 Anleitung: docs/LOKALE_KI.md
 EOF

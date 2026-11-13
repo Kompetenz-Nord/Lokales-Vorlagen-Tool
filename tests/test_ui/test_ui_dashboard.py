@@ -17,6 +17,7 @@ from uia_helpers import (
     make_service,
 )
 
+from insurance_app.ui.bundle import choice
 from insurance_app.ui.pages.case_view import TAB_DOCUMENTS, CaseView
 from insurance_app.ui.pages.dashboard import COLUMNS, DashboardPage
 
@@ -34,6 +35,19 @@ def svc(tmp_path: Path):
 @pytest.fixture()
 def dlg(monkeypatch: pytest.MonkeyPatch) -> DialogRecorder:
     return DialogRecorder(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
+def choice_calls(monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """Mehrere Dateien: Rückfrage „ein Vertrag / mehrere Verträge“ – hier immer „ein Vertrag“."""
+    calls: list[int] = []
+
+    def answer(parent, file_count):
+        calls.append(file_count)
+        return choice.CHOICE_SINGLE
+
+    monkeypatch.setattr(choice, "ask_single_or_bundle", answer)
+    return calls
 
 
 def make_page(qtbot, svc, open_case=None) -> DashboardPage:
@@ -92,7 +106,7 @@ def test_open_selected_case_by_button_and_double_click(qtbot, svc, dlg):
     assert opened == [case.id, case.id]
 
 
-def test_choose_files_creates_case_and_processes(qtbot, svc, dlg):
+def test_choose_files_creates_case_and_processes(qtbot, svc, dlg, choice_calls):
     view = CaseView(svc, show_catalog=lambda: None)
     qtbot.addWidget(view)
     page = make_page(qtbot, svc, view.open_case)
@@ -113,6 +127,8 @@ def test_choose_files_creates_case_and_processes(qtbot, svc, dlg):
     assert view.tabs.currentIndex() == TAB_DOCUMENTS
     assert view.documents.summary is not None  # Ergebnis der Auswertung sichtbar
     assert page.table.rowCount() == 1
+    assert choice_calls == [2]  # zwei Dateien -> Rückfrage, Antwort „ein Vertrag“
+    assert svc.list_bundles() == []
     assert not dlg.errors
 
 

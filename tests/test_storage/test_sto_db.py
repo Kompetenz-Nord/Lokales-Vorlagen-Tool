@@ -19,7 +19,9 @@ def test_schema_v1_created(tmp_path):
         names = {r["name"] for r in db.query_all("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert names >= TABLES
         # Version 2 (SVC-04/05): Spalte cases.revision für die optimistische Sperre
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 3  # v3: Kundenmappen (bundles, cases.bundle_id)
+        assert (
+            db.schema_version() == LATEST_SCHEMA_VERSION == 3
+        )  # v3: Kundenmappen (bundles, cases.bundle_id)
         cols = {r["name"] for r in db.query_all("PRAGMA table_info(cases)")}
         assert {
             "id",

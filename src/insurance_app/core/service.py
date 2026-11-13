@@ -34,7 +34,7 @@ from ..documents.pages import DocumentAccessError, PasswordRequiredError, load_p
 from ..export.exporter import ExportBlockedError, Exporter, ExportLogEntry
 from ..extraction.extractor import SourceDocInfo, extract_candidates
 from ..extraction.merge import merge_candidates
-from ..extraction.normalize import normalize_value
+from ..extraction.normalize import NOTE_UNREADABLE, normalize_value
 from ..letters import load_letter_template
 from ..letters.compose import LetterPlan, resolve_letter
 from ..letters.din5008 import render_letter
@@ -899,7 +899,10 @@ class AppService:
             client,
             model,
             timeout=float(self.settings.ai_timeout_s),
-            max_tokens=self.settings.ai_max_tokens,
+            # Denkmodelle brauchen Platz für den Denkprozess vor der eigentlichen Antwort
+            max_tokens=max(self.settings.ai_max_tokens, 6144)
+            if (entry and entry.thinking)
+            else self.settings.ai_max_tokens,
             normalizer=lambda key, raw: normalize_value(get_field(key), raw)[0],
         )
         res = extractor.extract(
@@ -970,11 +973,8 @@ class AppService:
         candidates: list[Candidate] = []
         errors: list[str] = []
         used: set[str] = set()
-        for i, doc in enumerate(docs):
-            if cancel is not None and cancel.is_set():
-                break
-            if progress:
-                progress(i, len(docs), f"Lokale KI ({primary}) prüft Dokument {i + 1}/{len(docs)}")
+        inputs: dict[str, tuple] = {}
+        for doc in docs:
             pages = doc.text.pages  # type: ignore[union-attr]
             weak = (
                 [p for p in pages if p.quality.value != "GOOD" or p.method.value != "PDF_TEXT"] or pages[:2]
@@ -982,24 +982,42 @@ class AppService:
             images = {
                 p.page_number: self.document_page_image(case, doc.id, p.page_number, dpi=150) for p in weak
             }
-            cands, errs, ok = self._run_ai_model(primary, client, doc, weak, images, targets)
-            errors += errs
-            used.add(primary)
-            if (not ok or not cands) and fallback and not (cancel is not None and cancel.is_set()):
+            inputs[doc.id] = (doc, weak, images)
+        plan = [(primary, [d.id for d in docs])]
+        steps_total = len(docs) * (1 + bool(fallback) + bool(cross))
+        done = 0
+
+        def run(model: str, doc_ids: list[str]) -> list[str]:
+            """Ein Modell nacheinander auf Dokumente anwenden, danach entladen. Gibt gescheiterte IDs zurück."""
+            nonlocal done
+            failed: list[str] = []
+            for doc_id in doc_ids:
+                if cancel is not None and cancel.is_set():
+                    break
+                doc, weak, images = inputs[doc_id]
                 if progress:
-                    progress(i, len(docs), f"Ausweichmodell {fallback} für Dokument {i + 1}/{len(docs)}")
-                cands2, errs2, _ = self._run_ai_model(fallback, client, doc, weak, images, targets)
-                cands += cands2
-                errors += errs2
-                used.add(fallback)
-            if cross and not (cancel is not None and cancel.is_set()):
-                cands3, errs3, _ = self._run_ai_model(cross, client, doc, weak, images, targets)
-                cands += cands3
-                errors += errs3
-                used.add(cross)
-            candidates += cands
+                    progress(
+                        done,
+                        max(steps_total, 1),
+                        f"{model}: Dokument {doc_ids.index(doc_id) + 1}/{len(doc_ids)}",
+                    )
+                cands, errs, ok = self._run_ai_model(model, client, doc, weak, images, targets)
+                candidates.extend(cands)
+                errors.extend(errs)
+                used.add(model)
+                done += 1
+                if not ok or not cands:
+                    failed.append(doc_id)
+            client.unload_model(model)  # Speicher freigeben, bevor das nächste Modell lädt
+            return failed
+
+        failed = run(*plan[0])
+        if fallback and failed:
+            run(fallback, failed)
+        if cross:
+            run(cross, [d.id for d in docs])
         if progress:
-            progress(len(docs), max(len(docs), 1), "Lokale KI abgeschlossen")
+            progress(steps_total, max(steps_total, 1), "Lokale KI abgeschlossen")
         new_fields, history = reconcile(case.contract_fields, candidates)
         case.contract_fields = new_fields
         case.history.extend(history)
@@ -1096,9 +1114,10 @@ class AppService:
         if not raw:
             raise FieldInputError("Bitte einen Wert eingeben oder das Feld als „nicht relevant“ markieren.")
         normalized, note = normalize_value(fdef, raw, strict=True)
-        if normalized is None and note:
-            raise FieldInputError(f"{fdef.label}: {note}")
+        if normalized is None and note and note != NOTE_UNREADABLE:
+            raise FieldInputError(f"{fdef.label}: {note}")  # konkreter Grund (z. B. Tag im Monatsfeld)
         if normalized is None:
+            # allgemeiner Hinweis -> dem Nutzer das erwartete Format nennen
             hint = {
                 FieldType.DATE: "Bitte im Format TT.MM.JJJJ eingeben.",
                 FieldType.MONTH: "Bitte im Format MM.JJJJ eingeben.",

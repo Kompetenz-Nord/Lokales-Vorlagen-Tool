@@ -400,15 +400,18 @@ class LocalAiPanel(QWidget):
         table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         table.setWordWrap(True)
         table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         hdr = table.horizontalHeader()
         hdr.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        for col, width in ((0, 150), (1, 230), (3, 150), (4, 170), (5, 130), (6, 150)):
+        for col, width in ((0, 140), (3, 115), (4, 135), (5, 115), (6, 150)):
             table.setColumnWidth(col, width)
         table.horizontalHeaderItem(3).setToolTip(
             "Ungefähre Downloadgröße; „laut Ollama-Registry“ = aus dem Registry-Manifest übernommen"
         )
         self.model_table = table
+        hdr.sectionResized.connect(lambda *_: QTimer.singleShot(0, self._fit_table))
         self.pull_buttons: dict[str, QPushButton] = {}
         self.remove_buttons: dict[str, QPushButton] = {}
         for row, (name, entry) in enumerate(MODEL_CATALOG.items()):

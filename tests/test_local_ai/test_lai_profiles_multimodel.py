@@ -37,7 +37,7 @@ def hw(ram: float | None, disk: float | None = 100.0) -> HardwareInfo:
 
 
 def test_catalog_has_three_requested_models_with_roles():
-    for name in ("glm-ocr", "qwen3-vl:4b", "gemma4:e4b"):
+    for name in ("glm-ocr", "qwen3-vl:4b", "qwen3-vl:4b-instruct", "gemma4:e4b"):
         entry = MODEL_CATALOG[name]
         assert entry.role and entry.advantages and entry.verified  # Größe aus Ollama-Registry-Manifest
         assert entry.num_ctx > 4096  # Bildanfragen brauchen mehr als den Ollama-Standard
@@ -62,10 +62,11 @@ def test_recommend_profile(ram, disk, expected):
 
 def test_profiles_models():
     assert PROFILES["kompakt"].models == ["glm-ocr"]
-    assert PROFILES["standard"].models == ["glm-ocr", "qwen3-vl:4b"]
-    assert PROFILES["maximal"].models == ["glm-ocr", "qwen3-vl:4b", "gemma4:e4b"]
+    # Standard-Ausweichmodell: instruct-Variante (gleiches Modell ohne Denkphase; auf CPU gemessen nutzbar)
+    assert PROFILES["standard"].models == ["glm-ocr", "qwen3-vl:4b-instruct"]
+    assert PROFILES["maximal"].models == ["glm-ocr", "qwen3-vl:4b-instruct", "gemma4:e4b"]
     cfg = settings_for_profile("maximal")
-    assert cfg["ai_model"] == "glm-ocr" and cfg["ai_fallback_model"] == "qwen3-vl:4b"
+    assert cfg["ai_model"] == "glm-ocr" and cfg["ai_fallback_model"] == "qwen3-vl:4b-instruct"
     assert cfg["ai_crosscheck_model"] == "gemma4:e4b"
     assert PROFILES["standard"].approx_download_gb == 6.0
 
@@ -97,7 +98,7 @@ def _chat(payload: dict):
             },
             "done_reason": "stop",
         }
-    value = "2053-01-01" if model == "qwen3-vl:4b" else "2054-01-01"  # gemma widerspricht absichtlich
+    value = "2053-01-01" if model.startswith("qwen3-vl") else "2054-01-01"  # gemma widerspricht absichtlich
     body = {
         "fields": [
             {
@@ -146,7 +147,7 @@ def test_active_model_failure_triggers_fallback(svc: AppService):
             return 500, {"error": "simulierter Fehler"}
         return _chat(payload)
 
-    state = FakeState(models=_models("glm-ocr", "qwen3-vl:4b"), chat=chat)
+    state = FakeState(models=_models("glm-ocr", "qwen3-vl:4b-instruct"), chat=chat)
     with running_fake(state) as fake:
         svc.update_settings(ai_enabled=True, ollama_url=fake.url)
         svc.apply_ai_profile("standard")
@@ -154,7 +155,7 @@ def test_active_model_failure_triggers_fallback(svc: AppService):
         svc.add_document(case, SYN / "MUSTER_Police_Direktversicherung.pdf")
         svc.process_documents(case)
         result = svc.run_local_ai(case)
-        assert result["models_used"] == ["glm-ocr", "qwen3-vl:4b"]
+        assert result["models_used"] == ["glm-ocr", "qwen3-vl:4b-instruct"]
         assert (
             case.field("contract.end_date").normalized_value == "2053-01-01"
         )  # Qwen bestätigt die Regel-Extraktion

@@ -41,7 +41,7 @@ from ..bundle.common import (
     contracts_text,
 )
 from ..bundle.importing import BundleImport, summary_text
-from ..bundle.tables import ContractsTable, QueueTable, ResultTable
+from ..bundle.tables import ContractsTable, QueueTable, ResultTable, short_title
 from ..case.common import error_text
 from ..case.drop_area import DropArea
 from ..case.formatting import format_local_time
@@ -100,12 +100,20 @@ class BundlesPage(QWidget):
             )
         )
 
-        body = QHBoxLayout()
-        body.setSpacing(14)
-        outer.addLayout(body, 1)
-        body.addWidget(self._build_left())
-
-        self.right = QStackedWidget()
+        self.scroll = QScrollArea()
+        self.scroll.setWidgetResizable(True)
+        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
+        content = QWidget(objectName="BundleContent")
+        self.scroll.viewport().setObjectName("BundleViewport")
+        self.scroll.setStyleSheet("#BundleViewport, #BundleContent { background: transparent; }")
+        self.scroll.viewport().setAutoFillBackground(False)
+        lay = QVBoxLayout(content)
+        lay.setContentsMargins(0, 0, 8, 8)
+        lay.setSpacing(8)
+        top = QHBoxLayout()
+        top.setSpacing(16)
+        top.addWidget(self._build_left())
+        self.detail_stack = QStackedWidget()
         self.empty_label = muted(EMPTY_NO_BUNDLES)
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         empty = QWidget()
@@ -113,9 +121,15 @@ class BundlesPage(QWidget):
         ev.setContentsMargins(4, 8, 4, 4)
         ev.addWidget(self.empty_label)
         ev.addStretch(1)
-        self.right.addWidget(empty)
-        self.right.addWidget(self._build_detail())
-        body.addWidget(self.right, 1)
+        self.detail_stack.addWidget(empty)
+        self.detail_stack.addWidget(self._build_head())
+        top.addWidget(self.detail_stack, 1)
+        lay.addLayout(top)
+        self.lower = self._build_lower()
+        lay.addWidget(self.lower)
+        lay.addStretch(1)
+        self.scroll.setWidget(content)
+        outer.addWidget(self.scroll, 1)
 
         self.refresh()
 
@@ -124,7 +138,7 @@ class BundlesPage(QWidget):
     # ------------------------------------------------------------------
     def _build_left(self) -> QWidget:
         left = QWidget()
-        left.setFixedWidth(300)
+        left.setFixedWidth(290)
         lv = QVBoxLayout(left)
         lv.setContentsMargins(0, 0, 0, 0)
         lv.setSpacing(8)
@@ -133,12 +147,30 @@ class BundlesPage(QWidget):
         self.bundle_list.setAccessibleName("Liste der Kundenmappen")
         self.bundle_list.setWordWrap(True)
         self.bundle_list.setSpacing(2)
+        self.bundle_list.setMinimumHeight(170)
         self.bundle_list.currentItemChanged.connect(lambda *_: self._on_selection())
         lv.addWidget(self.bundle_list, 1)
         self.new_btn = primary_button(
             "Neue Kundenmappe", "Neue Mappe für eine Kundin bzw. einen Kunden anlegen"
         )
         self.new_btn.clicked.connect(self.new_bundle)
+        lv.addWidget(self.new_btn)
+        return left
+
+    def _build_head(self) -> QWidget:
+        """Kopf der gewählten Mappe: Titel, Verwaltung, Erklärung, Ablagefläche."""
+        head = QWidget()
+        lay = QVBoxLayout(head)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+        self.title_label = QLabel("", objectName="SectionTitle")
+        self.title_label.setStyleSheet("font-size: 14pt;")
+        self.title_label.setWordWrap(True)
+        lay.addWidget(self.title_label)
+        self.meta_label = muted("")
+        lay.addWidget(self.meta_label)
+
+        manage = QHBoxLayout()
         self.rename_btn = QPushButton("Umbenennen …")
         self.rename_btn.setAccessibleName("Kundenmappe umbenennen")
         self.rename_btn.clicked.connect(self.rename_selected)
@@ -155,37 +187,19 @@ class BundlesPage(QWidget):
             f"QPushButton:disabled {{ color: #9AA4B1; border-color: {theme.BORDER}; background: #EEF1F5; }}"
         )
         self.delete_btn.clicked.connect(self.delete_selected)
-        for btn in (self.new_btn, self.rename_btn, self.dissolve_btn, self.delete_btn):
-            lv.addWidget(btn)
-        return left
-
-    def _build_detail(self) -> QWidget:
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        content = QWidget(objectName="BundleContent")
-        self.scroll.viewport().setObjectName("BundleViewport")
-        self.scroll.setStyleSheet("#BundleViewport, #BundleContent { background: transparent; }")
-        lay = QVBoxLayout(content)
-        lay.setContentsMargins(0, 0, 8, 8)
-        lay.setSpacing(8)
-
-        self.title_label = QLabel("", objectName="SectionTitle")
-        self.title_label.setStyleSheet("font-size: 14pt;")
-        self.title_label.setWordWrap(True)
-        lay.addWidget(self.title_label)
-        self.meta_label = muted("")
-        lay.addWidget(self.meta_label)
+        for btn in (self.rename_btn, self.dissolve_btn, self.delete_btn):
+            manage.addWidget(btn)
+        manage.addStretch(1)
+        lay.addLayout(manage)
         self.explanation = muted(BUNDLE_EXPLANATION)
         lay.addWidget(self.explanation)
 
-        # --- Ablage -------------------------------------------------------
         self.drop_area = DropArea()
         self.drop_area.setAccessibleName("Ablagefläche für die Dokumente der Kundenmappe")
-        self.drop_area.setMinimumHeight(92)
+        self.drop_area.setMinimumHeight(88)
         self.drop_area.files_dropped.connect(self.start_import)
         dv = QHBoxLayout(self.drop_area)
-        dv.setContentsMargins(20, 12, 20, 12)
+        dv.setContentsMargins(20, 10, 20, 10)
         texts = QVBoxLayout()
         big = QLabel("📥  Dokumente der Kundin bzw. des Kunden hier ablegen")
         big.setStyleSheet("font-size: 12.5pt; font-weight: 700; background: transparent; border: none;")
@@ -204,15 +218,22 @@ class BundlesPage(QWidget):
         self.choose_btn.clicked.connect(self.choose_files)
         dv.addWidget(self.choose_btn)
         lay.addWidget(self.drop_area)
+        lay.addStretch(1)
+        return head
 
-        # --- Warteschlange ------------------------------------------------
+    def _build_lower(self) -> QWidget:
+        """Warteschlange, Verträge der Mappe, Erzeugen und Ergebnis (volle Breite)."""
+        lower = QWidget()
+        lay = QVBoxLayout(lower)
+        lay.setContentsMargins(0, 6, 0, 0)
+        lay.setSpacing(8)
+
         lay.addWidget(section_title("Warteschlange"))
         self.queue_summary = muted("Noch keine Dateien in der Warteschlange.")
         lay.addWidget(self.queue_summary)
         self.queue_table = QueueTable()
         lay.addWidget(self.queue_table)
 
-        # --- Verträge -----------------------------------------------------
         lay.addWidget(section_title("Verträge in dieser Mappe"))
         self.contracts_hint = muted(
             "Je Vertrag den Anwenderwunsch wählen und mit „Prüfen & bearbeiten“ die Daten prüfen. "
@@ -235,7 +256,6 @@ class BundlesPage(QWidget):
         actions.addWidget(self.ready_label, 1)
         lay.addLayout(actions)
 
-        # --- Ergebnis -----------------------------------------------------
         self.result_frame, rl = card()
         self.result_frame.setAccessibleName("Ergebnis der Erzeugung")
         rl.addWidget(section_title("Ergebnis der Erzeugung"))
@@ -252,9 +272,7 @@ class BundlesPage(QWidget):
         rl.addLayout(rrow)
         self.result_frame.setVisible(False)
         lay.addWidget(self.result_frame)
-        lay.addStretch(1)
-        self.scroll.setWidget(content)
-        return self.scroll
+        return lower
 
     # ------------------------------------------------------------------
     # Zustand
@@ -332,6 +350,8 @@ class BundlesPage(QWidget):
         self._show_selected()
 
     def select_bundle(self, bundle_id: str) -> bool:
+        if self._busy:  # während einer Warteschlange bleibt die laufende Mappe sichtbar
+            return self._shown_id == bundle_id
         if not any(b.id == bundle_id for b in self.bundles):
             self._reload_list(bundle_id)
             return self.selected_bundle_id() == bundle_id
@@ -358,10 +378,12 @@ class BundlesPage(QWidget):
         if bundle is None:
             self.overview = []
             self.empty_label.setText(EMPTY_NO_BUNDLES if not self.bundles else EMPTY_NO_SELECTION)
-            self.right.setCurrentIndex(0)
+            self.detail_stack.setCurrentIndex(0)
+            self.lower.setVisible(False)
             self._update_buttons()
             return
-        self.right.setCurrentIndex(1)
+        self.detail_stack.setCurrentIndex(1)
+        self.lower.setVisible(True)
         self.title_label.setText(bundle.title)
         self.title_label.setAccessibleName(f"Kundenmappe {bundle.title}")
         self.refresh_overview()
@@ -389,7 +411,7 @@ class BundlesPage(QWidget):
             log.warning("Mappenübersicht nicht lesbar: %s", type(exc).__name__)
             self.overview = []
             self.contracts_hint.setText(f"Übersicht nicht lesbar: {error_text(exc)}")
-        self.contracts_table.set_rows(self.overview, self._template_choices())
+        self.contracts_table.set_rows(self.overview, self._template_choices(), bundle.title)
         ready = sum(1 for r in self.overview if r.ready)
         count = len(self.overview)
         self.meta_label.setText(
@@ -405,7 +427,8 @@ class BundlesPage(QWidget):
         self._update_buttons()
 
     def _titles(self) -> dict[str, str]:
-        return {r.case_id: r.title for r in self.overview}
+        bundle = self.selected_bundle()
+        return {r.case_id: short_title(r.title, bundle.title if bundle else None) for r in self.overview}
 
     def _render_queue(self) -> None:
         items = self._queues.get(self._shown_id or "", [])
@@ -510,7 +533,15 @@ class BundlesPage(QWidget):
     def start_import(self, paths: list[Path]) -> bool:
         """Dateien in die Warteschlange der gewählten Mappe übernehmen und nacheinander lesen."""
         bid = self.selected_bundle_id()
-        if bid is None or self._busy:
+        if self._busy:
+            dialogs.show_info(
+                self,
+                "Bitte warten",
+                "Es läuft noch eine Warteschlange bzw. Erzeugung. Bitte warten, bis sie beendet ist, "
+                "und die Dateien danach erneut ablegen.",
+            )
+            return False
+        if bid is None:
             return False
         files = local_files([Path(p) for p in paths])
         if not files:
@@ -576,7 +607,8 @@ class BundlesPage(QWidget):
         self.result_frame.setVisible(rows is not None)
         if rows is None:
             return
-        self.result_table.set_rows(rows)
+        bundle = self.selected_bundle()
+        self.result_table.set_rows(rows, bundle.title if bundle else None)
         made = sum(1 for r in rows if r.ok)
         skipped = len(rows) - made
         text = f"{made} {'Dokument' if made == 1 else 'Dokumente'} erzeugt, {skipped} übersprungen."
@@ -585,6 +617,10 @@ class BundlesPage(QWidget):
         if made:
             text += " Die Dateien sind Entwürfe zur Prüfung – es wurde nichts versendet."
         self.result_summary.setText(text)
+
+    def scroll_to_queue(self) -> None:
+        """Zur Warteschlange scrollen (Tabellen „Warteschlange“ und „Verträge“ im Blick)."""
+        self.scroll.verticalScrollBar().setValue(max(self.lower.y() - 4, 0))
 
     def open_export_dir(self) -> None:
         path = self.service.export_dir

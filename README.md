@@ -118,15 +118,15 @@ Geprüft am 13.11.2026 über die Programmlogik (`AppService`): Der Ablauf führt
 | Keine Vertragsnummer erkannt → eigener Vorgang für diese Datei | Bitte prüfen, zu welchem Vertrag die Datei gehört |
 | Prüfung durch einen Menschen bleibt Pflicht | „Alle fertigen erzeugen“ überspringt Vorgänge ohne Anwenderwunsch oder mit offenen Pflichtpunkten – mit Begründung |
 
-Ablauf in der App (Bezeichnungen der geplanten Oberfläche; kleine Abweichungen möglich):
+Ablauf in der App:
 
-1. Seitenleiste **„Kundenmappen“** → **„Neue Kundenmappe“**. Titel bitte ohne sensible Daten (z. B. ein Kürzel statt des Namens).
-2. Dateien ablegen. Die **„Warteschlange“** arbeitet sie nacheinander ab. Status je Datei: Wartet, Wird ausgewertet, Fertig, Passwort erforderlich, Nicht verarbeitbar, Abgebrochen.
-3. **„Verträge in dieser Mappe“** zeigt je Vertrag: Versicherer, die letzten Zeichen der Vertragsnummer, Dokumentarten, Arbeitsstand, gewählte Vorlage und ob er fertig ist.
-4. Je Vertrag den **„Anwenderwunsch“** wählen, den Vorgang öffnen und die Werte wie gewohnt prüfen (Abschnitt „Musterfall“ oben).
-5. **„Alle fertigen erzeugen“**. Jede PDF durchläuft dieselbe Qualitätskontrolle wie beim einzelnen Vorgang.
+1. Seitenleiste **„Kundenmappen“** → **„Neue Kundenmappe“**. Oder im Dashboard mehrere Dateien ablegen und **„Mehrere Verträge – Kundenmappe“** wählen. Den Namen der Mappe möglichst ohne vollen Kundennamen wählen (z. B. ein Kürzel); er erscheint in den Vorgangstiteln.
+2. Dateien ablegen. Die **„Warteschlange“** arbeitet sie nacheinander ab. Status je Datei: Wartet, Wird ausgewertet, Fertig, Passwort erforderlich, Nicht verarbeitbar, Abgebrochen. Passwörter fragt die App danach je Datei ab.
+3. **„Verträge in dieser Mappe“** zeigt je Vertrag: Vorgang, Versicherer, die letzten Stellen der Vertragsnummer, Dokumente, Anwenderwunsch, Status („✔ bereit“ oder offene Punkte), erzeugte Datei.
+4. Je Vertrag den **„Anwenderwunsch“** wählen und mit **„Prüfen & bearbeiten“** die Werte wie gewohnt prüfen (Abschnitt „Musterfall“ oben).
+5. **„Alle fertigen erzeugen“** → **„Jetzt erzeugen“**. Jede PDF durchläuft dieselbe Qualitätskontrolle wie beim einzelnen Vorgang.
 
-Schritt für Schritt: [docs/BEDIENUNG.md – Kundenmappe](docs/BEDIENUNG.md#kundenmappe-1-kundin-mehrere-verträge).
+Schritt für Schritt: [docs/BEDIENUNG.md – Kundenmappe](docs/BEDIENUNG.md#3-kundenmappe-1-kundin-mehrere-verträge).
 
 ---
 
@@ -161,7 +161,7 @@ ollama pull gemma4:e4b      # nur für die Gegenprüfung
 ollama run qwen3-vl:4b      # kurzer Test im Chat, beenden mit /bye
 ```
 
-Danach in der App: „Einstellungen & Datenschutz“ → „Lokale KI (optional)“ → „Lokale KI aktivieren“ → „Lokale Laufzeit testen“. Dort legen Sie auch fest, welches Modell aktiv läuft („Aktives Modell“, „Ausweichmodell“, „Gegenprüfung“).
+Danach in der App: „Einstellungen & Datenschutz“ → „Lokale KI (optional)“ → Profil übernehmen (z. B. „Profil „Standard“ übernehmen“) → in der Tabelle „Lokale KI-Modelle“ je Modell „Herunterladen …“ (nur nach ausdrücklicher Zustimmung) → „Lokale KI aktivieren“ → „Status prüfen“. Unter „Modellauswahl“ legen Sie fest, welches Modell aktiv läuft („Aktives Modell“, „Ausweichmodell“, „Gegenprüfung“).
 
 > **Ehrlicher Stand:** Die Skripte wurden nicht auf einem echten Mac oder Windows-PC ausgeführt (macOS-Skript: Testlauf und nachgebildete Befehle unter Linux; Windows-Skript: nicht ausgeführt). Gemessene Laufzeiten stehen nur in [docs/BENCHMARK.md](docs/BENCHMARK.md). Alles Weitere: [docs/LOKALE_KI.md](docs/LOKALE_KI.md).
 

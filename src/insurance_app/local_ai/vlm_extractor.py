@@ -642,6 +642,7 @@ class VlmExtractor:
                     schema,
                     max_tokens=self.max_tokens,
                     timeout=self.timeout,
+                    num_ctx=_num_ctx(self.model),
                 )
                 page_text = None if page_texts is None else (page_texts.get(page_no) or "")
                 cands, dropped, unproven = self._parse_page(
@@ -698,3 +699,11 @@ class VlmExtractor:
             result.ok,
         )
         return result
+
+
+def _num_ctx(model: str) -> int:
+    """Kontextfenster für Bildanfragen (Ollama-Standard 4096 ist für Seite + Antwort zu knapp)."""
+    from .status import MODEL_CATALOG
+
+    entry = MODEL_CATALOG.get(model)
+    return entry.num_ctx if entry else 8192

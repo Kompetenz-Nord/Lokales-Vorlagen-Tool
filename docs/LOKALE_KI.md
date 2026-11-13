@@ -74,7 +74,7 @@
 | Ausweichen | Liefert das aktive Modell bei einem Dokument keinen Vorschlag oder scheitert es, liest das **Ausweichmodell** dieses Dokument zusätzlich. |
 | Gegenprüfung | Ist ein Gegenprüfungsmodell gewählt und vorhanden, liest es jedes Dokument zusätzlich. |
 | GLM-OCR (Texterkennung) | Liefert Text. Die App wertet ihn mit denselben Regeln aus wie die normale Texterkennung. Die Wortpositionen sind dabei nur angenähert. Der Beleg zeigt daher Seite und Textausschnitt, aber keine Markierung im Seitenbild. |
-| Qwen3-VL / Gemma 4 (Bildmodelle) | Nur für **Vertragsdaten**, die aus Dokumenten gelesen werden dürfen und **nicht** rechtlich relevant sind. Ist eine Vorlage gewählt, bevorzugt die App deren Felder. Fester, eng begrenzter Auftrag. Antwort nur als JSON nach festem Schema. Temperatur 0 (möglichst gleichbleibende Antworten). |
+| Qwen3-VL / Gemma 4 (Bildmodelle) | Nur für **Vertragsdaten**, die aus Dokumenten gelesen werden dürfen, **nicht** rechtlich relevant und noch nicht von Ihnen bestätigt sind. Ist eine Vorlage gewählt, bevorzugt die App deren Felder. Fester, eng begrenzter Auftrag. Antwort nur als JSON nach festem Schema. Temperatur 0 (möglichst gleichbleibende Antworten). |
 | Beleg | Bildmodelle müssen jeden Wert **wörtlich zitieren**. Ohne Zitat entsteht kein Vorschlag. Steht der Wert nicht im Zitat oder das Zitat nicht im Text der Seite, halbiert die App jeweils die Sicherheit und vermerkt das am Wert. |
 | Vermerk | Methode in der Prüftabelle: „Lokale KI (Bilderkennung)“. Die verwendeten Modelle stehen am Vorgang und im Verlauf. |
 
@@ -175,10 +175,10 @@ Weitere Hinweise:
 ### 5.2 Weg A: In der App (mit Zustimmungsdialog)
 
 1. **„Einstellungen & Datenschutz“** → **„Lokale KI (optional)“**.
-2. Profil-Vorschlag ansehen und übernehmen – oder **„Aktives Modell“**, **„Ausweichmodell“** und **„Gegenprüfung“** selbst wählen.
-3. **„Modell herunterladen …“**. Der Dialog zeigt Größe, freien Speicherplatz und Lizenz. Erst nach dem Häkchen **„Ich stimme dem Download ausdrücklich zu“** startet **„Download starten“**.
+2. **„★ Empfehlung für dieses Gerät“** ansehen. Mit **„Profil „Standard“ übernehmen“** (bzw. Kompakt/Maximal) setzen Sie die Modelle des Profils – ohne Download. Oder unter **„Modellauswahl“** **„Aktives Modell“**, **„Ausweichmodell“** und **„Gegenprüfung“** selbst wählen (wird sofort gespeichert).
+3. In der Tabelle **„Lokale KI-Modelle“** je Modell **„Herunterladen …“**. Die App prüft zuerst den freien Speicherplatz. Dann zeigt ein Dialog Größe, Speicherplatz und Lizenz. Erst nach dem Häkchen **„Ich stimme dem Download ausdrücklich zu“** startet **„Download starten“**.
 4. Abbrechen ist jederzeit möglich. Bereits geladene Teile behält Ollama.
-5. **„Lokale KI aktivieren“** anhaken → **„Lokale Laufzeit testen“**. Der Status sollte „Bereit“ zeigen.
+5. **„Lokale KI aktivieren“** anhaken → **„Status prüfen“**. Der Status sollte z. B. „Bereit: glm-ocr ist aktiv.“ zeigen.
 
 Den Download führt Ollama aus der Ollama-Bibliothek im Internet aus. Die App sendet dabei nur den Modellnamen an Ollama auf Ihrem Rechner – keine Dokumente, keine Vorgangsdaten.
 
@@ -217,7 +217,7 @@ ollama run qwen3-vl:4b     # kurzer Test im Chat, beenden mit /bye
 ```
 
 - Lokale Adresse von Ollama: `http://localhost:11434` (die App nutzt `http://127.0.0.1:11434`, das ist derselbe Rechner).
-- Modell entfernen: `ollama rm qwen3-vl:4b` – oder in der App „Modell entfernen …“ (mit Rückfrage). Vorgänge und Dokumente bleiben erhalten.
+- Modell entfernen: `ollama rm qwen3-vl:4b` – oder in der App in der Tabelle „Lokale KI-Modelle“ „Entfernen …“ (mit Rückfrage). Vorgänge und Dokumente bleiben erhalten.
 - Modellordner: macOS `~/.ollama/models`, Windows `C:\Users\<Name>\.ollama\models`. Anderer Ort über die Umgebungsvariable `OLLAMA_MODELS`.
 
 **Ohne Internet:** Alles funktioniert weiter. Sind die Modelle einmal geladen, arbeitet auch die lokale KI offline. Nur der Download braucht Internet.
@@ -256,17 +256,17 @@ Die App lehnt deshalb Modellnamen ab, die den Bestandteil `cloud` enthalten (z. 
 
 ## 8. Einstellungen in der App
 
-**Ort:** „Einstellungen & Datenschutz“ → „Lokale KI (optional)“. Die Bezeichnungen folgen der Planung der Oberfläche; kleine Abweichungen sind möglich, solange sie fertiggestellt wird.
+**Ort:** „Einstellungen & Datenschutz“ → „Lokale KI (optional)“.
 
 | Element | Wirkung |
 |---|---|
 | **„Lokale KI aktivieren“** | Erst dann darf die App den lokalen Ollama-Dienst nutzen. |
-| **Profil-Vorschlag** | Anhand von Arbeitsspeicher und Speicherplatz (Abschnitt 4.1). Übernehmen setzt die drei Modelle des Profils. |
+| **„★ Empfehlung für dieses Gerät“** und **„Profil „…“ übernehmen“** | Vorschlag anhand von Arbeitsspeicher und Speicherplatz (Abschnitt 4.1). Übernehmen setzt die drei Modelle des Profils, lädt aber nichts herunter. |
 | **„Aktives Modell“** | Läuft zuerst. Sie entscheiden. Voreinstellung `glm-ocr`. |
 | **„Ausweichmodell“** | Springt ein, wenn das aktive Modell fehlt oder bei einem Dokument nichts liefert. Voreinstellung `qwen3-vl:4b`. Wählen Sie dasselbe Modell wie bei „Aktives Modell“, bleibt das Ausweichmodell leer. |
 | **„Gegenprüfung“** | Optional, z. B. `gemma4:e4b`. Leer = keine Gegenprüfung. |
-| **„Modell herunterladen …“** / **„Modell entfernen …“** | Download nur nach ausdrücklicher Zustimmung, Entfernen nur nach Rückfrage. |
-| **„Lokale Laufzeit testen“** | Prüft, ob Ollama läuft und welche Modelle vorhanden sind. |
+| Tabelle **„Lokale KI-Modelle“** mit **„Herunterladen …“** / **„Entfernen …“** | Je Modell: Aufgabe, Vorteil, Download, Lizenz, installiert ja/nein. Download nur nach Platzprüfung und ausdrücklicher Zustimmung, Entfernen nur nach Rückfrage. |
+| **„Status prüfen“** | Fragt den lokalen Ollama-Dienst (127.0.0.1), ob er läuft und welche Modelle vorhanden sind. |
 
 **Statusmeldungen** (Auswahl):
 
@@ -299,7 +299,7 @@ Die App lehnt deshalb Modellnamen ab, die den Bestandteil `cloud` enthalten (z. 
 
 | Problem | Lösung |
 |---|---|
-| „Der lokale Ollama-Dienst läuft nicht.“ | Ollama öffnen (macOS: Programme → Ollama; Windows: Startmenü → Ollama) oder im Terminal `ollama serve`. Dann „Lokale Laufzeit testen“. |
+| „Der lokale Ollama-Dienst läuft nicht.“ | Ollama öffnen (macOS: Programme → Ollama; Windows: Startmenü → Ollama) oder im Terminal `ollama serve`. Dann „Status prüfen“. |
 | „Lokale KI nicht installiert“, obwohl Ollama installiert ist | Ollama liegt an einem unüblichen Ort und läuft nicht. Ollama starten – dann erkennt die App es über die lokale Adresse. |
 | „Die eingestellte Ollama-Adresse zeigt nicht auf diesen Rechner.“ | In `settings.json` `ollama_url` auf `http://127.0.0.1:11434` setzen. |
 | „Cloud-Modelle sind nicht erlaubt …“ | Gewollt. Einen lokalen Modellnamen wählen, z. B. `qwen3-vl:4b`. |
