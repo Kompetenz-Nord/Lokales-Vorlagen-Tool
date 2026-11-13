@@ -1,0 +1,244 @@
+{
+  "version": "2026-11",
+  "kind": "letter",
+  "form_code": "DIN5008",
+  "info_block": [
+    {
+      "label": "Versicherungsnehmer",
+      "text": "{policyholder.first_name?} {policyholder.name}",
+      "optional": false
+    },
+    {
+      "label": "Telefon",
+      "text": "{order.sender_phone?}",
+      "optional": true
+    },
+    {
+      "label": "E-Mail",
+      "text": "{order.sender_email?}",
+      "optional": true
+    },
+    {
+      "label": "Datum",
+      "text": "{order.letter_date|date}",
+      "optional": false
+    }
+  ],
+  "salutation": "Sehr geehrte Damen und Herren,",
+  "closing": "Mit freundlichen Grüßen",
+  "template_id": "brief_widerruf_2026-11",
+  "catalog_id": "widerruf",
+  "title": "Widerruf – Antrag / Vertrag / Rücknahme einer Kündigung (Brief nach DIN 5008)",
+  "short_title": "Widerruf",
+  "subject_variants": [
+    {
+      "text": "Widerruf meines Antrags",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "equals": "application"
+        }
+      ],
+      "style": "line"
+    },
+    {
+      "text": "Widerruf meiner Vertragserklärung",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "equals": "contract"
+        }
+      ],
+      "style": "line"
+    },
+    {
+      "text": "Rücknahme meiner Kündigung",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "equals": "termination"
+        }
+      ],
+      "style": "line"
+    }
+  ],
+  "subject_lines": [
+    {
+      "text": "Versicherungsnummer: {contract.number}",
+      "conditions": [],
+      "style": "line"
+    },
+    {
+      "text": "Versicherte Person: {insured.first_name?} {insured.last_name?}",
+      "conditions": [
+        {
+          "field": "insured.last_name"
+        }
+      ],
+      "style": "line"
+    }
+  ],
+  "blocks": [
+    {
+      "text": "hiermit widerrufe ich meinen Antrag vom {order.application_date|date} auf Abschluss des oben genannten Versicherungsvertrags.",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "equals": "application"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "hiermit widerrufe ich meine Vertragserklärung zum oben genannten Versicherungsvertrag.",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "equals": "contract"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Bitte bestätigen Sie mir den Eingang dieses Widerrufs sowie die Rückabwicklung des Vertrags schriftlich.",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "in": [
+            "application",
+            "contract"
+          ]
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Bereits gezahlte Beiträge erstatten Sie bitte, soweit sie mir zustehen, auf folgendes Konto:",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "in": [
+            "application",
+            "contract"
+          ]
+        },
+        {
+          "field": "order.refund_to_account",
+          "equals": "true"
+        }
+      ],
+      "style": "line"
+    },
+    {
+      "text": "Kontoinhaber: {order.payment_account_holder}",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "in": [
+            "application",
+            "contract"
+          ]
+        },
+        {
+          "field": "order.refund_to_account",
+          "equals": "true"
+        }
+      ],
+      "style": "list"
+    },
+    {
+      "text": "IBAN: {order.payment_iban|iban}",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "in": [
+            "application",
+            "contract"
+          ]
+        },
+        {
+          "field": "order.refund_to_account",
+          "equals": "true"
+        }
+      ],
+      "style": "list"
+    },
+    {
+      "text": "Kreditinstitut: {order.payment_institution}",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "in": [
+            "application",
+            "contract"
+          ]
+        },
+        {
+          "field": "order.refund_to_account",
+          "equals": "true"
+        },
+        {
+          "field": "order.payment_institution"
+        }
+      ],
+      "style": "list"
+    },
+    {
+      "text": "meine Kündigung vom {order.termination_letter_date|date} zum oben genannten Vertrag nehme ich hiermit zurück. Ich bitte Sie, den Vertrag unverändert fortzuführen, und um eine schriftliche Bestätigung.",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "equals": "termination"
+        }
+      ],
+      "style": "paragraph"
+    }
+  ],
+  "acknowledgments": [
+    {
+      "field": "order.deadline_checked",
+      "text": "Widerrufsfrist bzw. Möglichkeit der Rücknahme wurden geprüft. Die App prüft keine Fristen.",
+      "conditions": []
+    }
+  ],
+  "plausibility_rules": [
+    "letter_date_plausible"
+  ],
+  "hints": [
+    {
+      "text": "Widerrufsfrist in der Regel 14 Tage, bei Lebensversicherungen 30 Tage. Sie beginnt erst, wenn Versicherungsschein, Vertragsbestimmungen, Informationen und Widerrufsbelehrung in Textform zugegangen sind. Textform genügt, eine Begründung ist nicht nötig; zur Fristwahrung genügt die rechtzeitige Absendung.",
+      "source": "§ 8 Abs. 1 und 2 VVG, § 152 Abs. 1 VVG",
+      "severity": "INFO",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "in": [
+            "application",
+            "contract"
+          ]
+        }
+      ]
+    },
+    {
+      "text": "Eine Kündigung wird mit Zugang wirksam und kann nur widerrufen werden, wenn der Widerruf vorher oder gleichzeitig zugeht. Danach ist eine Fortführung nur mit Zustimmung des Versicherers möglich – der Brief ist deshalb als Bitte formuliert.",
+      "source": "§ 130 Abs. 1 Satz 2 BGB",
+      "severity": "WARNING",
+      "conditions": [
+        {
+          "field": "order.revocation_subject",
+          "equals": "termination"
+        }
+      ]
+    },
+    {
+      "text": "Die Erklärung wird erst mit Zugang beim Versicherer wirksam. Bitte einen Versandweg mit Zugangsnachweis wählen (z. B. Einschreiben, Fax mit Sendebericht) und eine Kopie aufbewahren.",
+      "source": "§ 130 Abs. 1 BGB",
+      "severity": "INFO",
+      "conditions": []
+    }
+  ],
+  "notes": [
+    "Kein Verweis auf § 175 SGB V (betrifft nur gesetzliche Krankenkassen).",
+    "Widerruf und Rücktritt werden nicht vermischt."
+  ]
+}

@@ -1,0 +1,230 @@
+{
+  "version": "2026-11",
+  "kind": "letter",
+  "form_code": "DIN5008",
+  "info_block": [
+    {
+      "label": "Versicherungsnehmer",
+      "text": "{policyholder.first_name?} {policyholder.name}",
+      "optional": false
+    },
+    {
+      "label": "Telefon",
+      "text": "{order.sender_phone?}",
+      "optional": true
+    },
+    {
+      "label": "E-Mail",
+      "text": "{order.sender_email?}",
+      "optional": true
+    },
+    {
+      "label": "Datum",
+      "text": "{order.letter_date|date}",
+      "optional": false
+    }
+  ],
+  "salutation": "Sehr geehrte Damen und Herren,",
+  "closing": "Mit freundlichen Grüßen",
+  "template_id": "brief_kuendigung_ausserordentlich_2026-11",
+  "catalog_id": "kuendigung_ausserordentlich",
+  "title": "Außerordentliche Kündigung / Sonderkündigung (Brief nach DIN 5008)",
+  "short_title": "Sonderkuendigung",
+  "subject_variants": [
+    {
+      "text": "Außerordentliche Kündigung des Versicherungsvertrags",
+      "conditions": [],
+      "style": "line"
+    }
+  ],
+  "subject_lines": [
+    {
+      "text": "Versicherungsnummer: {contract.number}",
+      "conditions": [],
+      "style": "line"
+    },
+    {
+      "text": "Versicherte Person: {insured.first_name?} {insured.last_name?}",
+      "conditions": [
+        {
+          "field": "insured.last_name"
+        }
+      ],
+      "style": "line"
+    }
+  ],
+  "derived": {
+    "timing_phrase": {
+      "field": "order.termination_timing",
+      "cases": {
+        "date": "zum {order.desired_date|date}, hilfsweise zum nächstmöglichen Zeitpunkt",
+        "next_possible": "zum nächstmöglichen Zeitpunkt",
+        "increase_effective": "zu dem Zeitpunkt, zu dem die Beitragserhöhung wirksam werden soll"
+      }
+    }
+  },
+  "blocks": [
+    {
+      "text": "mit Schreiben vom {order.insurer_notice_date|date} haben Sie mir eine Beitragserhöhung für den oben genannten Vertrag mitgeteilt. Aus diesem Anlass kündige ich den Vertrag hiermit außerordentlich {@timing_phrase}.",
+      "conditions": [
+        {
+          "field": "order.special_reason",
+          "equals": "premium_increase"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "im Zusammenhang mit dem Schadenfall vom {order.insurer_notice_date|date} kündige ich den oben genannten Versicherungsvertrag hiermit außerordentlich {@timing_phrase}.",
+      "conditions": [
+        {
+          "field": "order.special_reason",
+          "equals": "claim"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "hiermit kündige ich den oben genannten Versicherungsvertrag außerordentlich {@timing_phrase}. Anlass: {order.reason}",
+      "conditions": [
+        {
+          "field": "order.special_reason",
+          "equals": "other"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Ich stütze die Kündigung auf {order.legal_basis_text}.",
+      "conditions": [
+        {
+          "field": "order.legal_basis_text"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Bitte bestätigen Sie mir den Eingang dieser Kündigung sowie den Zeitpunkt, zu dem der Vertrag endet, schriftlich.",
+      "conditions": [],
+      "style": "paragraph"
+    },
+    {
+      "text": "Das Ihnen erteilte SEPA-Lastschriftmandat widerrufe ich mit Wirkung zum Vertragsende.",
+      "conditions": [
+        {
+          "field": "order.revoke_sepa",
+          "equals": "true"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Ein etwaiges Guthaben bzw. einen Rückkaufswert überweisen Sie bitte auf folgendes Konto:",
+      "conditions": [
+        {
+          "field": "order.payout_to_account",
+          "equals": "true"
+        }
+      ],
+      "style": "line"
+    },
+    {
+      "text": "Kontoinhaber: {order.payment_account_holder}",
+      "conditions": [
+        {
+          "field": "order.payout_to_account",
+          "equals": "true"
+        }
+      ],
+      "style": "list"
+    },
+    {
+      "text": "IBAN: {order.payment_iban|iban}",
+      "conditions": [
+        {
+          "field": "order.payout_to_account",
+          "equals": "true"
+        }
+      ],
+      "style": "list"
+    },
+    {
+      "text": "Kreditinstitut: {order.payment_institution}",
+      "conditions": [
+        {
+          "field": "order.payout_to_account",
+          "equals": "true"
+        },
+        {
+          "field": "order.payment_institution"
+        }
+      ],
+      "style": "list"
+    }
+  ],
+  "allowed_values": [
+    {
+      "field": "order.termination_timing",
+      "values": [
+        "date",
+        "next_possible"
+      ],
+      "message": "„Zum Wirksamwerden der Beitragserhöhung“ passt nur zum Anlass Beitragserhöhung.",
+      "conditions": [
+        {
+          "field": "order.special_reason",
+          "in": [
+            "claim",
+            "other"
+          ]
+        }
+      ]
+    }
+  ],
+  "acknowledgments": [
+    {
+      "field": "order.legal_basis_confirmed",
+      "text": "Sonderkündigungsrecht und Kündigungsfrist wurden im Einzelfall geprüft. Die App stellt keine Berechtigung fest.",
+      "conditions": []
+    }
+  ],
+  "plausibility_rules": [
+    "bav_termination_warning",
+    "letter_date_plausible",
+    "desired_date_future",
+    "notice_date_recent"
+  ],
+  "hints": [
+    {
+      "text": "Die Erklärung wird erst mit Zugang beim Versicherer wirksam. Bitte einen Versandweg mit Zugangsnachweis wählen (z. B. Einschreiben, Fax mit Sendebericht) und eine Kopie aufbewahren.",
+      "source": "§ 130 Abs. 1 BGB",
+      "severity": "INFO",
+      "conditions": []
+    },
+    {
+      "text": "Bei einer Beitragserhöhung aufgrund einer Anpassungsklausel sieht § 40 VVG ein Kündigungsrecht innerhalb eines Monats nach Zugang der Mitteilung vor, frühestens zum Wirksamwerden der Erhöhung. In der privaten Krankenversicherung gilt § 205 Abs. 4 VVG mit eigener Frist. Bitte im Einzelfall prüfen.",
+      "source": "§ 40 VVG, § 205 Abs. 4 VVG",
+      "severity": "INFO",
+      "conditions": [
+        {
+          "field": "order.special_reason",
+          "equals": "premium_increase"
+        }
+      ]
+    },
+    {
+      "text": "Nach einem Schadenfall sehen z. B. § 92 VVG (Sachversicherung) und § 111 VVG (Haftpflichtversicherung) ein Kündigungsrecht mit Monatsfrist vor; der Fristbeginn ist unterschiedlich geregelt. Bitte im Einzelfall prüfen.",
+      "source": "§ 92 VVG, § 111 VVG",
+      "severity": "INFO",
+      "conditions": [
+        {
+          "field": "order.special_reason",
+          "equals": "claim"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Die Rechtsgrundlage wird nur gedruckt, wenn der Anwender sie ausdrücklich einträgt."
+  ]
+}

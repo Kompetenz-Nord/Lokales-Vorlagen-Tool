@@ -1,0 +1,137 @@
+{
+  "version": "2026-11",
+  "kind": "letter",
+  "form_code": "DIN5008",
+  "info_block": [
+    {
+      "label": "Versicherungsnehmer",
+      "text": "{policyholder.first_name?} {policyholder.name}",
+      "optional": false
+    },
+    {
+      "label": "Telefon",
+      "text": "{order.sender_phone?}",
+      "optional": true
+    },
+    {
+      "label": "E-Mail",
+      "text": "{order.sender_email?}",
+      "optional": true
+    },
+    {
+      "label": "Datum",
+      "text": "{order.letter_date|date}",
+      "optional": false
+    }
+  ],
+  "salutation": "Sehr geehrte Damen und Herren,",
+  "closing": "Mit freundlichen Grüßen",
+  "template_id": "brief_betreuerwechsel_2026-11",
+  "catalog_id": "tecis_bestandsuebertrag",
+  "title": "Bestandsübertrag / Betreuerwechsel (Brief nach DIN 5008)",
+  "short_title": "Betreuerwechsel",
+  "subject_variants": [
+    {
+      "text": "Übertragung der Betreuung meines Vertrags",
+      "conditions": [],
+      "style": "line"
+    }
+  ],
+  "subject_lines": [
+    {
+      "text": "Versicherungsnummer: {contract.number}",
+      "conditions": [],
+      "style": "line"
+    },
+    {
+      "text": "Versicherte Person: {insured.first_name?} {insured.last_name?}",
+      "conditions": [
+        {
+          "field": "insured.last_name"
+        }
+      ],
+      "style": "line"
+    }
+  ],
+  "defaults": {
+    "order.new_advisor_company": "tecis Finanzdienstleistungen AG"
+  },
+  "blocks": [
+    {
+      "text": "hiermit bitte ich Sie, die Betreuung des oben genannten Vertrags auf die {order.new_advisor_company} zu übertragen. Meine neue Ansprechpartnerin bzw. mein neuer Ansprechpartner ist:",
+      "conditions": [],
+      "style": "line"
+    },
+    {
+      "text": "{order.new_advisor_name}",
+      "conditions": [],
+      "style": "list"
+    },
+    {
+      "text": "{order.new_advisor_street} {order.new_advisor_house_number?}",
+      "conditions": [],
+      "style": "list"
+    },
+    {
+      "text": "{order.new_advisor_postal_code} {order.new_advisor_city}",
+      "conditions": [],
+      "style": "list"
+    },
+    {
+      "text": "Vermittlernummer: {order.new_advisor_id}",
+      "conditions": [
+        {
+          "field": "order.new_advisor_id"
+        }
+      ],
+      "style": "list"
+    },
+    {
+      "text": "Vertragsänderungen können künftig auch über die neue Betreuung veranlasst werden.",
+      "conditions": [
+        {
+          "field": "order.grant_change_authority",
+          "equals": "true"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Ich bin damit einverstanden, dass Sie der neuen Betreuung die für die Betreuung meines Vertrags erforderlichen Vertragsdaten übermitteln.",
+      "conditions": [
+        {
+          "field": "order.data_sharing_consent",
+          "equals": "true"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Bitte bestätigen Sie mir die Übertragung der Betreuung schriftlich.",
+      "conditions": [],
+      "style": "paragraph"
+    }
+  ],
+  "acknowledgments": [],
+  "plausibility_rules": [
+    "letter_date_plausible"
+  ],
+  "hints": [
+    {
+      "text": "Viele Versicherer verlangen für einen Betreuerwechsel zusätzlich eine Maklervollmacht oder ein eigenes Formular. Bitte vorab beim Versicherer bzw. bei der neuen Betreuung klären.",
+      "source": null,
+      "severity": "INFO",
+      "conditions": []
+    },
+    {
+      "text": "Bei Lebens-, Kranken- und Unfallversicherungen unterliegen Vertragsdaten einer besonderen Schweigepflicht; eine Weitergabe an die neue Betreuung erfordert eine Einwilligung der Kundin bzw. des Kunden.",
+      "source": "§ 203 Abs. 1 StGB, Art. 6 DSGVO",
+      "severity": "INFO",
+      "conditions": []
+    }
+  ],
+  "notes": [
+    "Formulierung „Betreuung übertragen“ statt „Vertrag übertragen“: Der Vertrag bleibt beim Versicherer.",
+    "Vollmacht und Datenweitergabe sind getrennte, ausdrücklich zu wählende Erklärungen."
+  ]
+}

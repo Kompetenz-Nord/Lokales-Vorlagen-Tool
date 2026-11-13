@@ -1,0 +1,179 @@
+{
+  "version": "2026-11",
+  "kind": "letter",
+  "form_code": "DIN5008",
+  "info_block": [
+    {
+      "label": "Versicherungsnehmer",
+      "text": "{policyholder.first_name?} {policyholder.name}",
+      "optional": false
+    },
+    {
+      "label": "Telefon",
+      "text": "{order.sender_phone?}",
+      "optional": true
+    },
+    {
+      "label": "E-Mail",
+      "text": "{order.sender_email?}",
+      "optional": true
+    },
+    {
+      "label": "Datum",
+      "text": "{order.letter_date|date}",
+      "optional": false
+    }
+  ],
+  "salutation": "Sehr geehrte Damen und Herren,",
+  "closing": "Mit freundlichen Grüßen",
+  "template_id": "brief_kuendigung_ordentlich_2026-11",
+  "catalog_id": "kuendigung_ordentlich",
+  "title": "Ordentliche Kündigung (Brief nach DIN 5008)",
+  "short_title": "Kuendigung",
+  "subject_variants": [
+    {
+      "text": "Kündigung des Versicherungsvertrags",
+      "conditions": [],
+      "style": "line"
+    }
+  ],
+  "subject_lines": [
+    {
+      "text": "Versicherungsnummer: {contract.number}",
+      "conditions": [],
+      "style": "line"
+    },
+    {
+      "text": "Versicherte Person: {insured.first_name?} {insured.last_name?}",
+      "conditions": [
+        {
+          "field": "insured.last_name"
+        }
+      ],
+      "style": "line"
+    }
+  ],
+  "derived": {
+    "timing_phrase": {
+      "field": "order.termination_timing",
+      "cases": {
+        "date": "zum {order.desired_date|date}, hilfsweise zum nächstmöglichen Zeitpunkt",
+        "next_possible": "zum nächstmöglichen Zeitpunkt",
+        "increase_effective": "zu dem Zeitpunkt, zu dem die Beitragserhöhung wirksam werden soll"
+      }
+    }
+  },
+  "blocks": [
+    {
+      "text": "hiermit kündige ich den oben genannten Versicherungsvertrag fristgerecht {@timing_phrase}.",
+      "conditions": [
+        {
+          "field": "order.termination_timing",
+          "in": [
+            "date",
+            "next_possible"
+          ]
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Bitte bestätigen Sie mir den Eingang dieser Kündigung sowie den Zeitpunkt, zu dem der Vertrag endet, schriftlich.",
+      "conditions": [],
+      "style": "paragraph"
+    },
+    {
+      "text": "Das Ihnen erteilte SEPA-Lastschriftmandat widerrufe ich mit Wirkung zum Vertragsende.",
+      "conditions": [
+        {
+          "field": "order.revoke_sepa",
+          "equals": "true"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Ein etwaiges Guthaben bzw. einen Rückkaufswert überweisen Sie bitte auf folgendes Konto:",
+      "conditions": [
+        {
+          "field": "order.payout_to_account",
+          "equals": "true"
+        }
+      ],
+      "style": "line"
+    },
+    {
+      "text": "Kontoinhaber: {order.payment_account_holder}",
+      "conditions": [
+        {
+          "field": "order.payout_to_account",
+          "equals": "true"
+        }
+      ],
+      "style": "list"
+    },
+    {
+      "text": "IBAN: {order.payment_iban|iban}",
+      "conditions": [
+        {
+          "field": "order.payout_to_account",
+          "equals": "true"
+        }
+      ],
+      "style": "list"
+    },
+    {
+      "text": "Kreditinstitut: {order.payment_institution}",
+      "conditions": [
+        {
+          "field": "order.payout_to_account",
+          "equals": "true"
+        },
+        {
+          "field": "order.payment_institution"
+        }
+      ],
+      "style": "list"
+    }
+  ],
+  "allowed_values": [
+    {
+      "field": "order.termination_timing",
+      "values": [
+        "date",
+        "next_possible"
+      ],
+      "message": "Für die ordentliche Kündigung bitte „zum angegebenen Datum“ oder „zum nächstmöglichen Zeitpunkt“ wählen.",
+      "conditions": []
+    }
+  ],
+  "acknowledgments": [
+    {
+      "field": "order.deadline_checked",
+      "text": "Fristen und Termine wurden anhand der Vertragsunterlagen geprüft. Die App berechnet keine Fristen und stellt keine Berechtigung fest.",
+      "conditions": []
+    }
+  ],
+  "plausibility_rules": [
+    "bav_termination_warning",
+    "letter_date_plausible",
+    "desired_date_future"
+  ],
+  "hints": [
+    {
+      "text": "Die Erklärung wird erst mit Zugang beim Versicherer wirksam. Bitte einen Versandweg mit Zugangsnachweis wählen (z. B. Einschreiben, Fax mit Sendebericht) und eine Kopie aufbewahren.",
+      "source": "§ 130 Abs. 1 BGB",
+      "severity": "INFO",
+      "conditions": []
+    },
+    {
+      "text": "Bei Lebens- und Rentenversicherungen wird bei Kündigung der Rückkaufswert fällig; er kann unter den eingezahlten Beiträgen liegen. Alternativen (z. B. Beitragsfreistellung) vorher besprechen.",
+      "source": "§ 169 VVG",
+      "severity": "WARNING",
+      "conditions": []
+    }
+  ],
+  "notes": [
+    "Der Text behauptet keine Kündigungsfrist; „hilfsweise zum nächstmöglichen Zeitpunkt“ sichert ab, falls das gewünschte Datum nicht erreichbar ist."
+  ]
+}

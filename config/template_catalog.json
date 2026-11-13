@@ -38,8 +38,9 @@
       "title": "Ordentliche Kündigung",
       "insurer": "versichererunabhängig",
       "form_number": null,
-      "description": "Standardanschreiben zur fristgerechten Kündigung zum ermittelten Vertragsablauf.",
-      "legal_hint": "Kündigungsfrist und -termin sind nur prüfbedürftige Hinweise und müssen anhand der Vertragsbedingungen bestätigt werden."
+      "description": "Standardanschreiben zur fristgerechten Kündigung zum ermittelten Vertragsablauf. Als Kundenschreiben nach DIN 5008 erzeugt (kein Versicherer-Formular); eine eigene Originalvorlage kann zusätzlich importiert werden.",
+      "legal_hint": "Kündigungsfrist und -termin sind nur prüfbedürftige Hinweise und müssen anhand der Vertragsbedingungen bestätigt werden.",
+      "letter_file": "kuendigung_ordentlich.json"
     },
     {
       "id": "kuendigung_ausserordentlich",
@@ -48,8 +49,9 @@
       "title": "Außerordentliche Kündigung / Sonderkündigung",
       "insurer": "versichererunabhängig",
       "form_number": null,
-      "description": "Sonderkündigung, z. B. nach Beitragserhöhung oder im Schadenfall.",
-      "legal_hint": "Die konkrete Rechtsgrundlage ist vom Anwender zu bestätigen; die App stellt keine Berechtigung fest."
+      "description": "Sonderkündigung, z. B. nach Beitragserhöhung oder im Schadenfall. Als Kundenschreiben nach DIN 5008 erzeugt (kein Versicherer-Formular); eine eigene Originalvorlage kann zusätzlich importiert werden.",
+      "legal_hint": "Die konkrete Rechtsgrundlage ist vom Anwender zu bestätigen; die App stellt keine Berechtigung fest.",
+      "letter_file": "kuendigung_ausserordentlich.json"
     },
     {
       "id": "widerruf",
@@ -58,8 +60,9 @@
       "title": "Widerruf – Antrag / Vertrag / Kündigung",
       "insurer": "versichererunabhängig",
       "form_number": null,
-      "description": "Widerruf eines Antrags, Vertrags oder einer Kündigung.",
-      "legal_hint": "Widerrufsfristen werden nicht als gesichert ausgegeben; Grundlage und Frist sind vom Anwender zu prüfen."
+      "description": "Widerruf eines Antrags, Vertrags oder einer Kündigung. Als Kundenschreiben nach DIN 5008 erzeugt (kein Versicherer-Formular); eine eigene Originalvorlage kann zusätzlich importiert werden.",
+      "legal_hint": "Widerrufsfristen werden nicht als gesichert ausgegeben; Grundlage und Frist sind vom Anwender zu prüfen.",
+      "letter_file": "widerruf.json"
     },
     {
       "id": "hdi_beitragsfreistellung",
@@ -68,7 +71,8 @@
       "title": "Befristete Beitragsfreistellung / Beitragsreduzierung",
       "insurer": "HDI",
       "form_number": null,
-      "description": "Antrag auf befristete Beitragsfreistellung oder Beitragsreduzierung."
+      "description": "Antrag auf befristete Beitragsfreistellung oder Beitragsreduzierung. Als Kundenschreiben nach DIN 5008 erzeugt (kein Versicherer-Formular); eine eigene Originalvorlage kann zusätzlich importiert werden.",
+      "letter_file": "hdi_beitragsfreistellung.json"
     },
     {
       "id": "continentale_beitragserhoehung",
@@ -77,7 +81,8 @@
       "title": "Beitragserhöhung / Vertragsanpassung",
       "insurer": "Continentale",
       "form_number": null,
-      "description": "Antrag auf Beitragserhöhung bzw. Vertragsanpassung."
+      "description": "Antrag auf Beitragserhöhung bzw. Vertragsanpassung. Als Kundenschreiben nach DIN 5008 erzeugt (kein Versicherer-Formular); eine eigene Originalvorlage kann zusätzlich importiert werden.",
+      "letter_file": "continentale_beitragserhoehung.json"
     },
     {
       "id": "tecis_bestandsuebertrag",
@@ -86,7 +91,8 @@
       "title": "Bestandsübertrag / Betreuerwechsel an tecis AG",
       "insurer": "tecis",
       "form_number": null,
-      "description": "Übertragung der Vertragsbetreuung auf die tecis AG."
+      "description": "Übertragung der Vertragsbetreuung auf die tecis AG. Als Kundenschreiben nach DIN 5008 erzeugt (kein Versicherer-Formular); eine eigene Originalvorlage kann zusätzlich importiert werden.",
+      "letter_file": "tecis_bestandsuebertrag.json"
     },
     {
       "id": "tecis_haftungsfreistellung_ak",
@@ -95,7 +101,8 @@
       "title": "Haftungsfreistellung Arbeitskraftabsicherung",
       "insurer": "tecis",
       "form_number": null,
-      "description": "Haftungsfreistellung im Zusammenhang mit der Arbeitskraftabsicherung (z. B. BU)."
+      "description": "Haftungsfreistellung im Zusammenhang mit der Arbeitskraftabsicherung (z. B. BU).",
+      "legal_hint": "Haftungsrelevante Erklärung der tecis – der Wortlaut wird nicht erzeugt. Bitte die Originalvorlage der tecis importieren."
     }
   ]
 }

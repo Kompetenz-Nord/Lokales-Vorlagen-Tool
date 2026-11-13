@@ -1,0 +1,110 @@
+{
+  "version": "2026-11",
+  "kind": "letter",
+  "form_code": "DIN5008",
+  "info_block": [
+    {
+      "label": "Versicherungsnehmer",
+      "text": "{policyholder.first_name?} {policyholder.name}",
+      "optional": false
+    },
+    {
+      "label": "Telefon",
+      "text": "{order.sender_phone?}",
+      "optional": true
+    },
+    {
+      "label": "E-Mail",
+      "text": "{order.sender_email?}",
+      "optional": true
+    },
+    {
+      "label": "Datum",
+      "text": "{order.letter_date|date}",
+      "optional": false
+    }
+  ],
+  "salutation": "Sehr geehrte Damen und Herren,",
+  "closing": "Mit freundlichen Grüßen",
+  "template_id": "brief_beitragserhoehung_2026-11",
+  "catalog_id": "continentale_beitragserhoehung",
+  "title": "Beitragserhöhung / Vertragsanpassung (Brief nach DIN 5008)",
+  "short_title": "Beitragserhoehung",
+  "subject_variants": [
+    {
+      "text": "Antrag auf Erhöhung des Beitrags",
+      "conditions": [],
+      "style": "line"
+    }
+  ],
+  "subject_lines": [
+    {
+      "text": "Versicherungsnummer: {contract.number}",
+      "conditions": [],
+      "style": "line"
+    },
+    {
+      "text": "Versicherte Person: {insured.first_name?} {insured.last_name?}",
+      "conditions": [
+        {
+          "field": "insured.last_name"
+        }
+      ],
+      "style": "line"
+    }
+  ],
+  "blocks": [
+    {
+      "text": "für den oben genannten Vertrag beantrage ich, den Beitrag zum {order.change_start_date|date} um {order.increase_amount|amount} {order.premium_interval|interval} zu erhöhen.",
+      "conditions": [],
+      "style": "paragraph"
+    },
+    {
+      "text": "Der neue Gesamtbeitrag beträgt damit {order.new_premium_amount|amount} {order.premium_interval|interval}.",
+      "conditions": [
+        {
+          "field": "order.new_premium_amount"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Das bestehende SEPA-Lastschriftmandat soll für den neuen Beitrag unverändert bestehen bleiben.",
+      "conditions": [
+        {
+          "field": "order.sepa_mandate_continues",
+          "equals": "true"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Bitte bestätigen Sie mir die Vertragsänderung schriftlich und senden Sie mir einen Nachtrag zum Versicherungsschein zu. Sollten für die Erhöhung weitere Angaben oder Formulare erforderlich sein (z. B. Gesundheitsfragen), bitte ich um Zusendung.",
+      "conditions": [],
+      "style": "paragraph"
+    }
+  ],
+  "acknowledgments": [
+    {
+      "field": "order.deadline_checked",
+      "text": "Fristen und Termine wurden anhand der Vertragsunterlagen geprüft. Die App berechnet keine Fristen und stellt keine Berechtigung fest.",
+      "conditions": []
+    }
+  ],
+  "plausibility_rules": [
+    "increase_total_matches",
+    "letter_date_plausible",
+    "change_start_future"
+  ],
+  "hints": [
+    {
+      "text": "Je nach Tarif kann eine Erhöhung eine erneute Risikoprüfung (z. B. Gesundheitsfragen) erfordern; für den Erhöhungsteil können neue Wartezeiten oder Fristen gelten.",
+      "source": "Vertragsbedingungen",
+      "severity": "INFO",
+      "conditions": []
+    }
+  ],
+  "notes": [
+    "Gesamtbeitrag wird gegen bestätigten bisherigen Beitrag + Erhöhung geprüft (Warnung bei Abweichung)."
+  ]
+}

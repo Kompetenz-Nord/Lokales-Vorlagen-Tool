@@ -45,13 +45,16 @@ class FillPolicy(StrEnum):
 class Condition(BaseModel):
     """Bedingung auf einen Feldwert (normalisiert)."""
 
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     field: str
     equals: str | None = None
     in_: list[str] | None = Field(default=None, alias="in")
+    empty: bool = False  # True: erfüllt, wenn das Feld leer bzw. "nicht relevant" ist
 
     def matches(self, normalized_value: str | None) -> bool:
+        if self.empty:
+            return normalized_value is None or normalized_value == ""
         if self.equals is not None:
             return normalized_value == self.equals
         if self.in_ is not None:
@@ -182,6 +185,7 @@ class CatalogEntry(BaseModel):
     description: str
     mapping_file: str | None = None  # Datei in config/field_schemas
     original_file: str | None = None  # Datei in assets/templates/originals
+    letter_file: str | None = None  # generierte DIN-5008-Briefvorlage in config/letter_templates
     legal_hint: str | None = None  # sachlicher Hinweis (z. B. Grundlage ist vom Anwender zu bestätigen)
 
 

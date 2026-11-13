@@ -1,0 +1,216 @@
+{
+  "version": "2026-11",
+  "kind": "letter",
+  "form_code": "DIN5008",
+  "info_block": [
+    {
+      "label": "Versicherungsnehmer",
+      "text": "{policyholder.first_name?} {policyholder.name}",
+      "optional": false
+    },
+    {
+      "label": "Telefon",
+      "text": "{order.sender_phone?}",
+      "optional": true
+    },
+    {
+      "label": "E-Mail",
+      "text": "{order.sender_email?}",
+      "optional": true
+    },
+    {
+      "label": "Datum",
+      "text": "{order.letter_date|date}",
+      "optional": false
+    }
+  ],
+  "salutation": "Sehr geehrte Damen und Herren,",
+  "closing": "Mit freundlichen Grüßen",
+  "template_id": "brief_beitragsaenderung_2026-11",
+  "catalog_id": "hdi_beitragsfreistellung",
+  "title": "Befristete Beitragsfreistellung / Beitragsreduzierung (Brief nach DIN 5008)",
+  "short_title": "Beitragsaenderung",
+  "subject_variants": [
+    {
+      "text": "Antrag auf befristete Beitragsfreistellung",
+      "conditions": [
+        {
+          "field": "order.premium_change_type",
+          "equals": "exemption"
+        },
+        {
+          "field": "order.change_end_date"
+        }
+      ],
+      "style": "line"
+    },
+    {
+      "text": "Antrag auf Beitragsfreistellung",
+      "conditions": [
+        {
+          "field": "order.premium_change_type",
+          "equals": "exemption"
+        }
+      ],
+      "style": "line"
+    },
+    {
+      "text": "Antrag auf befristete Beitragsreduzierung",
+      "conditions": [
+        {
+          "field": "order.premium_change_type",
+          "equals": "reduction"
+        },
+        {
+          "field": "order.change_end_date"
+        }
+      ],
+      "style": "line"
+    },
+    {
+      "text": "Antrag auf Beitragsreduzierung",
+      "conditions": [
+        {
+          "field": "order.premium_change_type",
+          "equals": "reduction"
+        }
+      ],
+      "style": "line"
+    }
+  ],
+  "subject_lines": [
+    {
+      "text": "Versicherungsnummer: {contract.number}",
+      "conditions": [],
+      "style": "line"
+    },
+    {
+      "text": "Versicherte Person: {insured.first_name?} {insured.last_name?}",
+      "conditions": [
+        {
+          "field": "insured.last_name"
+        }
+      ],
+      "style": "line"
+    }
+  ],
+  "blocks": [
+    {
+      "text": "für den oben genannten Vertrag beantrage ich eine befristete Beitragsfreistellung vom {order.change_start_date|date} bis zum {order.change_end_date|date}.",
+      "conditions": [
+        {
+          "field": "order.premium_change_type",
+          "equals": "exemption"
+        },
+        {
+          "field": "order.change_end_date"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "für den oben genannten Vertrag beantrage ich eine Beitragsfreistellung ab dem {order.change_start_date|date}.",
+      "conditions": [
+        {
+          "field": "order.premium_change_type",
+          "equals": "exemption"
+        },
+        {
+          "field": "order.change_end_date",
+          "empty": true
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "für den oben genannten Vertrag beantrage ich, den Beitrag vom {order.change_start_date|date} bis zum {order.change_end_date|date} auf {order.new_premium_amount|amount} {order.premium_interval|interval} zu reduzieren.",
+      "conditions": [
+        {
+          "field": "order.premium_change_type",
+          "equals": "reduction"
+        },
+        {
+          "field": "order.change_end_date"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "für den oben genannten Vertrag beantrage ich, den Beitrag ab dem {order.change_start_date|date} auf {order.new_premium_amount|amount} {order.premium_interval|interval} zu reduzieren.",
+      "conditions": [
+        {
+          "field": "order.premium_change_type",
+          "equals": "reduction"
+        },
+        {
+          "field": "order.change_end_date",
+          "empty": true
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Nach Ablauf dieses Zeitraums bitte ich darum, die Beitragszahlung in Höhe von {order.resume_premium_amount|amount} {order.premium_interval|interval} wieder aufzunehmen.",
+      "conditions": [
+        {
+          "field": "order.change_end_date"
+        },
+        {
+          "field": "order.resume_premium_amount"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Das bestehende SEPA-Lastschriftmandat soll unverändert bestehen bleiben.",
+      "conditions": [
+        {
+          "field": "order.sepa_mandate_continues",
+          "equals": "true"
+        }
+      ],
+      "style": "paragraph"
+    },
+    {
+      "text": "Bitte bestätigen Sie mir die Änderung schriftlich und teilen Sie mir mit, wie sie sich auf die Leistungen und den Versicherungsschutz meines Vertrags auswirkt.",
+      "conditions": [],
+      "style": "paragraph"
+    }
+  ],
+  "acknowledgments": [
+    {
+      "field": "order.deadline_checked",
+      "text": "Fristen und Termine wurden anhand der Vertragsunterlagen geprüft. Die App berechnet keine Fristen und stellt keine Berechtigung fest.",
+      "conditions": []
+    }
+  ],
+  "plausibility_rules": [
+    "change_period_order",
+    "letter_date_plausible",
+    "change_start_future",
+    "reduction_below_current"
+  ],
+  "hints": [
+    {
+      "text": "Ob eine Beitragsfreistellung oder -reduzierung möglich ist, regeln die Vertragsbedingungen (z. B. Mindestbeitrag, Mindestvertragsguthaben). Bei Lebensversicherungen siehe auch § 165 VVG (prämienfreie Versicherung).",
+      "source": "Vertragsbedingungen, § 165 VVG",
+      "severity": "INFO",
+      "conditions": []
+    },
+    {
+      "text": "Bei Berufsunfähigkeits- oder Risikoversicherungen kann eine Freistellung den Versicherungsschutz mindern oder entfallen lassen. Bitte vorher klären.",
+      "source": null,
+      "severity": "WARNING",
+      "conditions": [
+        {
+          "field": "order.premium_change_type",
+          "equals": "exemption"
+        }
+      ]
+    }
+  ],
+  "notes": [
+    "Beitragsfreistellung und -reduzierung sind getrennt wählbar (in der bisherigen Vorlage vermischt).",
+    "Ende vor Beginn wird als Fehler erkannt und blockiert den Export."
+  ]
+}
