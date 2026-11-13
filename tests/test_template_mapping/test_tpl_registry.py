@@ -380,3 +380,46 @@ def test_import_package_conflicting_version(tmp_path, package_members, app_paths
 def test_export_package_without_original(app_paths, tmp_path):
     with pytest.raises(TemplateNotAvailableError):
         TemplateRegistry(app_paths).export_package(TECIS, tmp_path / "x.zip")
+
+
+# ---------------------------------------------------------------------------
+# SEC-07: beschädigter Deflate-Datenstrom -> verständliche Meldung statt Absturz
+# ---------------------------------------------------------------------------
+
+
+def test_sec_07_corrupt_deflate_stream_gives_registry_error(tmp_path, package_members):
+    import struct
+    import zlib
+
+    zip_path = tmp_path / "kaputt.zip"
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        for name, data in package_members.items():
+            zf.writestr(name, data)
+    raw = bytearray(zip_path.read_bytes())
+    with zipfile.ZipFile(zip_path) as zf:
+        offset = zf.getinfo("original.pdf").header_offset
+    name_len, extra_len = struct.unpack("<HH", raw[offset + 26 : offset + 30])
+    start = offset + 30 + name_len + extra_len
+    for i in range(start + 10, start + 200):
+        raw[i] ^= 0xFF
+    zip_path.write_bytes(bytes(raw))
+    with zipfile.ZipFile(zip_path) as zf, pytest.raises(zlib.error):
+        zf.read("original.pdf")  # Voraussetzung: genau dieser Fehlerfall
+    reg = TemplateRegistry(AppPaths.for_testing(tmp_path / "ziel"))
+    with pytest.raises(TemplateRegistryError) as exc:
+        reg.import_package(zip_path)
+    assert exc.value.user_message == "Das Vorlagenpaket ist beschädigt."
+    assert not (tmp_path / "ziel" / "user_data" / "templates" / TECIS).exists()
+
+
+@pytest.mark.parametrize("error", [EOFError("abgeschnitten"), ValueError("kaputt")])
+def test_sec_07_other_decompression_errors_are_mapped(tmp_path, package_members, monkeypatch, error):
+    zip_path = _write_zip(tmp_path / "p.zip", package_members)
+
+    def broken_open(self, *args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(zipfile.ZipFile, "open", broken_open)
+    with pytest.raises(TemplateRegistryError) as exc:
+        TemplateRegistry(AppPaths.for_testing(tmp_path / "ziel")).import_package(zip_path)
+    assert exc.value.user_message == "Das Vorlagenpaket ist beschädigt."

@@ -73,6 +73,19 @@ class DinLayout:
 
 FORM_B = DinLayout(form="B", head_h=45 * mm, addr_top=45 * mm, info_top=50 * mm, folds=(105 * mm, 210 * mm))
 FORM_A = DinLayout(form="A", head_h=27 * mm, addr_top=27 * mm, info_top=32 * mm, folds=(87 * mm, 192 * mm))
+_LAYOUTS = {"A": FORM_A, "B": FORM_B}
+
+
+def din_layout(form: str) -> DinLayout:
+    """Layout zur Briefform „A“ oder „B“ (Groß-/Kleinschreibung und Leerzeichen egal).
+
+    Renderer und Brief-QA verwenden dieselbe Zuordnung. Eine unbekannte Form
+    wird abgelehnt, statt still auf ein anderes Layout auszuweichen.
+    """
+    lay = _LAYOUTS.get(str(form).strip().upper()) if form is not None else None
+    if lay is None:
+        raise ValueError("Unbekannte Briefform – erlaubt sind „A“ oder „B“ (Einstellungen prüfen).")
+    return lay
 
 
 @dataclass
@@ -156,8 +169,8 @@ def render_letter(
         raise ValueError("Finale Ausgabe nicht möglich: Es gibt noch offene Pflichtpunkte.")
     if not preview and MISSING_MARK.split("{")[0] in plan.printed_text():
         raise ValueError("Finale Ausgabe nicht möglich: fehlende Werte im Text.")
+    lay = din_layout(form)
     register_fonts(fonts_dir)
-    lay = FORM_B if form == "B" else FORM_A
     result = RenderResult(path=out_path, page_count=0, form=lay.form)
 
     # --- Informationsblock vorab berechnen (Höhe bestimmt Betreff-Position) ---

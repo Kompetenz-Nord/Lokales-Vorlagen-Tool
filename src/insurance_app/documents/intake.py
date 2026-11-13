@@ -59,7 +59,13 @@ from .filetypes import (
     detect_file_type,
     detect_file_type_from_bytes,
 )
-from .pages import exif_orientation, metadata_dpi, orientation_rotation, orientation_swaps_axes
+from .pages import (
+    MAX_IMAGE_PIXELS,
+    exif_orientation,
+    metadata_dpi,
+    orientation_rotation,
+    orientation_swaps_axes,
+)
 from .pdf_analysis import (
     DEFAULT_MIN_TEXT_CHARS,
     OTHER_FORMAT,
@@ -399,6 +405,10 @@ def _check_image(data: bytes, b: _Builder) -> None:
         try:
             for index, frame in enumerate(frames):
                 page_number = index + 1
+                if frame.width * frame.height > MAX_IMAGE_PIXELS:
+                    # vor dem Dekodieren prüfen: Pillow warnt erst ab ca. 89 Mio. und bricht erst
+                    # ab ca. 179 Mio. Bildpunkten ab – dazwischen würde das Bild voll geladen
+                    raise Image.DecompressionBombError("zu viele Bildpunkte")
                 frame.load()  # vollständig dekodieren: erkennt abgeschnittene Dateien
                 orientation = exif_orientation(frame)
                 dpi_x, dpi_y = metadata_dpi(frame)

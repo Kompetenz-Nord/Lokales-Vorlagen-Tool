@@ -23,6 +23,7 @@ from insurance_app.storage import (
     Database,
     DocumentImportError,
     DocumentNotFoundError,
+    StaleCaseError,
     StorageError,
     count_open_issues,
 )
@@ -439,3 +440,96 @@ def test_deleted_case_leaves_no_plain_text_in_database_files(app_paths):
         assert [s.id for s in CaseRepository(db2, app_paths).list_cases()] == [keep.id]
     finally:
         db2.close()
+
+
+# ---------------------------------------------------------------------------
+# Regressionen: optimistische Sperre, gelöschte und beschädigte Vorgänge
+# ---------------------------------------------------------------------------
+
+
+def test_svc_04_revision_increments_and_create_saves_revision_one(repo):
+    case = repo.create_case("MUSTER")
+    assert case.revision == 1 and repo.current_revision(case.id) == 1
+    assert repo.load_case(case.id).revision == 1
+    repo.save_case(case)
+    assert case.revision == 2 and repo.current_revision(case.id) == 2
+    assert repo.load_case(case.id).revision == 2
+    assert repo.current_revision("V20990101-ABCDEF") is None
+    assert repo.current_revision("../x") is None
+
+
+def test_svc_04_saving_stale_copy_of_deleted_case_does_not_resurrect_it(repo, app_paths, muster_file):
+    case = repo.create_case("MUSTER")
+    _fill(case)
+    repo.add_document(case, muster_file)
+    work = repo.load_case(case.id)  # z. B. Kopie eines Hintergrundjobs
+    repo.delete_case(case.id)
+    work.add_history(HistoryEntry(action="edited", field_key="contract.number"))
+    with pytest.raises(CaseNotFoundError):
+        repo.save_case(work)
+    assert not repo.exists(case.id)
+    assert repo.list_cases(include_archived=True) == []
+    for table in ("documents", "history"):
+        assert repo.db.query_one(f"SELECT COUNT(*) FROM {table} WHERE case_id = ?", (case.id,))[0] == 0  # noqa: S608
+    assert not (app_paths.cases_dir / case.id).exists()
+
+
+def test_svc_05_stale_copy_cannot_overwrite_newer_state(repo):
+    case = repo.create_case("MUSTER")
+    view = repo.load_case(case.id)  # Vorgangsansicht
+    repo.archive_case(case.id)  # Dashboard archiviert (frische Kopie)
+    view.add_history(HistoryEntry(action="confirmed", field_key="contract.number"))
+    before = view.revision
+    with pytest.raises(StaleCaseError) as info:
+        repo.save_case(view)
+    assert str(info.value) == "Der Vorgang wurde inzwischen an anderer Stelle geändert. Bitte neu laden."
+    assert isinstance(info.value, StorageError)
+    assert view.revision == before  # unverändert, wenn nicht gespeichert
+    loaded = repo.load_case(case.id)
+    assert loaded.archived is True
+    assert [h.action for h in repo.list_history(case.id)] == ["case_created", "archived"]
+    # nach dem Neuladen funktioniert das Speichern wieder, Verlauf bleibt vollständig
+    loaded.add_history(HistoryEntry(action="confirmed", field_key="contract.number"))
+    repo.save_case(loaded)
+    assert [h.action for h in repo.list_history(case.id)] == ["case_created", "archived", "confirmed"]
+    assert len(repo.load_case(case.id).history) == 3
+
+
+def test_svc_05_unsaved_new_case_with_existing_id_is_rejected(repo):
+    case = repo.create_case("MUSTER")
+    clone = Case(id=case.id, title="Überschreiben?")
+    with pytest.raises(StaleCaseError):
+        repo.save_case(clone)
+    assert repo.load_case(case.id).title == "MUSTER"
+
+
+def _corrupt(repo, case_id: str) -> None:
+    row = repo.db.query_one("SELECT data_json FROM cases WHERE id = ?", (case_id,))
+    data = row["data_json"][:-1] + ', "neues_feld": 1}'  # wie eine neuere Programmversion
+    repo.db.execute("UPDATE cases SET data_json = ? WHERE id = ?", (data, case_id))
+
+
+def test_svc_09_unreadable_case_can_be_archived_and_restored(repo):
+    case = repo.create_case("MUSTER")
+    _corrupt(repo, case.id)
+    with pytest.raises(StorageError):
+        repo.load_case(case.id)
+    repo.archive_case(case.id)
+    assert repo.list_cases() == []
+    assert repo.list_cases(include_archived=True)[0].archived is True
+    repo.archive_case(case.id)  # bereits archiviert: keine weitere Verlaufszeile
+    repo.archive_case(case.id, archived=False)
+    assert [s.id for s in repo.list_cases()] == [case.id]
+    assert [h.action for h in repo.list_history(case.id)] == ["case_created", "archived", "unarchived"]
+    with pytest.raises(CaseNotFoundError):
+        repo.archive_case("V20990101-ABCDEF")
+
+
+def test_priv_02_unreadable_case_can_be_deleted_with_documents(repo, app_paths, muster_file):
+    case = repo.create_case("MUSTER")
+    doc = repo.add_document(case, muster_file)
+    _corrupt(repo, case.id)
+    assert repo.document_ids(case.id) == [doc.id]
+    repo.delete_case(case.id)
+    assert not repo.exists(case.id) and not (app_paths.cases_dir / case.id).exists()
+    assert repo.document_ids(case.id) == []

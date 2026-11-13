@@ -82,6 +82,7 @@ __all__ = [
     "MANIFEST_NAME",
     "NOISE_LEVELS",
     "BenchmarkItem",
+    "describe_variants",
     "generate_benchmark_set",
     "load_benchmark_set",
     "variant_ids",
@@ -96,11 +97,12 @@ MANIFEST_VERSION = 1
 CONFUSABLE_IBAN = "DE02100100100006820101"
 CONFUSABLE_IBAN_PRINTED = "DE02 1001 0010 0006 8201 01"
 
-#: Rauschstufen für ``generator._degrade`` (Standardabweichung, Salz-und-Pfeffer-Anteil, Unschärfe)
+#: Rauschstufen für ``generator._degrade`` (Standardabweichung, Salz-und-Pfeffer-Anteil, Unschärfe).
+#: „hoch“ ist für Menschen noch gut lesbar (etwa Handyfoto bei wenig Licht oder schlechte Kopie).
 NOISE_LEVELS: dict[str, dict[str, float]] = {
     "ohne": {"sigma": 0.0, "speckle": 0.0, "blur": 0.0},
     "niedrig": {"sigma": 6.0, "speckle": 0.0005, "blur": 0.3},
-    "hoch": {"sigma": 24.0, "speckle": 0.004, "blur": 0.9},
+    "hoch": {"sigma": 40.0, "speckle": 0.01, "blur": 1.2},
 }
 
 #: Kategorien (Reihenfolge = Reihenfolge im Bericht)
@@ -116,7 +118,7 @@ CATEGORY_LABELS: dict[str, str] = {
     "mehrseitig": "Mehrseitige Dokumente (Police 3 S., Standmitteilung 2 S.)",
 }
 
-_SCANNER_JPEG_QUALITY = 80  # übliche Scanner-Voreinstellung
+_SCANNER_JPEG_QUALITY = 75  # übliche Scanner-Voreinstellung
 _LINE_GRAY = (0.45, 0.45, 0.45)
 
 
@@ -212,7 +214,9 @@ def _police3_pages(measure: _Measure) -> list[_Page]:
         y,
     )
     y = _section(p1, "Versicherungsnehmer", y + 12)
-    y = _rows(p1, [("Name", "Musterfrau, Erika"), ("Anschrift", "Musterweg 12"), ("", "12345 Musterstadt")], y)
+    y = _rows(
+        p1, [("Name", "Musterfrau, Erika"), ("Anschrift", "Musterweg 12"), ("", "12345 Musterstadt")], y
+    )
     _paragraph(
         p1,
         measure,
@@ -704,7 +708,7 @@ _SPECS: tuple[_Spec, ...] = (
         "rauschen_hoch",
         "rauschen",
         _PM,
-        "Scan 300 dpi, starkes Rauschen und Unschärfe",
+        "Scan 300 dpi, starkes Rauschen und Unschärfe (für Menschen gut lesbar)",
         "pdf_scan",
         dpi=300,
         noise="hoch",
@@ -930,30 +934,71 @@ def _portal_image(tmp_dir: Path) -> Image.Image:
         tmp.unlink(missing_ok=True)
 
 
-def _page_count(spec: _Spec, layout: _Layout, rendered: int) -> int:
-    if spec.layout == "portal":
-        return 1
-    return len(layout.page_numbers) if layout.page_numbers else rendered
-
-
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _describe(spec: _Spec, index: int, seed: int, measure: _Measure) -> dict[str, Any]:
+    """Beschreibung einer Variante (ohne Dateigröße/Prüfsumme)."""
+    layout = _LAYOUTS[spec.layout]
+    if spec.layout == "portal":
+        page_count = 1
+    elif layout.page_numbers:
+        page_count = len(layout.page_numbers)
+    else:
+        page_count = len(layout.pages(measure))
+    return {
+        "id": spec.id,
+        "category": spec.category,
+        "also_in": list(spec.also_in),
+        "layout": spec.layout,
+        "description": spec.description,
+        "format": spec.fmt,
+        "dpi": spec.dpi,
+        "noise": spec.noise if spec.fmt != "pdf_text" else None,
+        "skew_deg": spec.skew,
+        "jpeg_quality": spec.jpeg_quality,
+        "rotation_deg": spec.rotation,
+        "page_count": page_count,
+        "needs_ocr": spec.fmt != "pdf_text",
+        "doc_type": layout.doc_type.value,
+        "document_date": layout.document_date.isoformat() if layout.document_date else None,
+        "effective_date": layout.effective_date.isoformat() if layout.effective_date else None,
+        "contract_number": layout.contract_number,
+        "seed": seed * 1000 + index * 10,
+        "base_seed": seed,
+        "synthetic": True,
+    }
+
+
+def describe_variants(seed: int = 0) -> list[BenchmarkItem]:
+    """Alle Varianten beschreiben, ohne Dateien zu schreiben (``file`` = nur Dateiname).
+
+    ``meta`` enthält hier weder ``sha256`` noch ``size_bytes``.
+    """
+    measure = _Measure()
+    return [
+        BenchmarkItem(
+            file=Path(_file_name(spec)),
+            ground_truth=dict(sorted(_LAYOUTS[spec.layout].truth.items())),
+            meta=_describe(spec, index, seed, measure),
+        )
+        for index, spec in enumerate(_SPECS)
+    ]
 
 
 def _build(spec: _Spec, index: int, out_dir: Path, measure: _Measure, seed: int) -> BenchmarkItem:
     layout = _LAYOUTS[spec.layout]
     path = out_dir / _file_name(spec)
-    variant_seed = seed * 1000 + index * 10
+    meta = _describe(spec, index, seed, measure)
+    variant_seed = int(meta["seed"])
     if spec.layout == "portal":
         img = _portal_image(out_dir)
         if spec.fmt != "jpeg":
             raise ValueError("Portal-Variante nur als JPEG vorgesehen")
         _write_image_file(img, spec, path)
-        rendered = 1
     else:
-        pages = layout.pages(measure)
-        doc = _render(pages)
-        rendered = doc.page_count
+        doc = _render(layout.pages(measure))
         try:
             numbers = list(layout.page_numbers or range(1, doc.page_count + 1))
             if spec.fmt == "pdf_text":
@@ -971,30 +1016,8 @@ def _build(spec: _Spec, index: int, out_dir: Path, measure: _Measure, seed: int)
         finally:
             doc.close()
 
-    meta: dict[str, Any] = {
-        "id": spec.id,
-        "category": spec.category,
-        "also_in": list(spec.also_in),
-        "layout": spec.layout,
-        "description": spec.description,
-        "format": spec.fmt,
-        "dpi": spec.dpi,
-        "noise": spec.noise if spec.fmt != "pdf_text" else None,
-        "skew_deg": spec.skew,
-        "jpeg_quality": spec.jpeg_quality,
-        "rotation_deg": spec.rotation,
-        "page_count": _page_count(spec, layout, rendered),
-        "needs_ocr": spec.fmt != "pdf_text",
-        "doc_type": layout.doc_type.value,
-        "document_date": layout.document_date.isoformat() if layout.document_date else None,
-        "effective_date": layout.effective_date.isoformat() if layout.effective_date else None,
-        "contract_number": layout.contract_number,
-        "seed": variant_seed,
-        "base_seed": seed,
-        "synthetic": True,
-        "sha256": _sha256(path),
-        "size_bytes": path.stat().st_size,
-    }
+    meta["sha256"] = _sha256(path)
+    meta["size_bytes"] = path.stat().st_size
     truth = dict(sorted(layout.truth.items()))
     (out_dir / f"{path.name}.truth.json").write_text(
         json.dumps(truth, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"

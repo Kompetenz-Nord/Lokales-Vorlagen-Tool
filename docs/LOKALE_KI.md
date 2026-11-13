@@ -131,6 +131,7 @@ Die App sucht Ollama im PATH und an üblichen Orten: macOS `/Applications/Ollama
 
 **Vor dem produktiven Einsatz** bitte auf der Zielhardware messen – mit synthetischen Musterdokumenten, nie mit echten Kundendaten:
 
-- Vergleichsfunktionen: `src/insurance_app/local_ai/benchmark.py`. Sie zählen je Feld „richtig“, „falsch“ und „fehlt“ sowie unerwartete Werte (möglicher Hinweis auf erfundene Angaben).
-- Vorgehen und Ergebnisse: [BENCHMARK.md](BENCHMARK.md).
+- Messskript: `python3 scripts/benchmark_extraction.py --with-vlm`. Es erzeugt synthetische Testdokumente („MUSTER – KEINE ECHTDATEN“) und vergleicht „nur OCR“ mit „OCR + lokale KI“. Voraussetzung: Ollama läuft auf demselben Rechner und das Modell ist geladen. Weitere Optionen: `--model`, `--ollama-url` (nur lokale Adressen), `--json` bzw. `--markdown` (Bericht speichern). Ohne `--with-vlm` misst das Skript nur die Texterkennung.
+- Gezählt wird je Feld „richtig“, „falsch“ und „fehlt“ sowie unerwartete Werte (möglicher Hinweis auf erfundene Angaben). Die Zählfunktionen stehen in `src/insurance_app/local_ai/benchmark.py`.
+- Vorgehen und bisherige Ergebnisse (nur OCR): [BENCHMARK.md](BENCHMARK.md).
 - Entscheidend ist vor allem die Zahl der **falschen** Werte. Ein falscher Wert ist gefährlicher als ein fehlender.

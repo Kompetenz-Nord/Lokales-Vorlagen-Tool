@@ -3,7 +3,7 @@
 **Kurz gesagt:**
 
 - **1 Original fehlt und ist Pflicht:** Nr. 9 „Haftungsfreistellung Arbeitskraftabsicherung“ (tecis). Ohne das Original ist der Eintrag nicht nutzbar. Die App erzeugt diesen Text bewusst nicht selbst.
-- **6 Einträge (Nr. 3–8) funktionieren schon heute** als Brief nach DIN 5008. Ein Original des Versicherers kann optional importiert werden. Nach der Bestätigung ersetzt es den Brief.
+- **6 Einträge (Nr. 3–8) funktionieren schon heute** als Brief nach DIN 5008. Ein Original des Versicherers kann optional importiert werden. Erst nach Ihrer Bestätigung ersetzt es den Brief.
 - Import ohne Programmierung im **Vorlagen-Studio**: importieren → zuordnen → prüfen und bestätigen → Status „Aktiv“.
 - **Vorschlag für später:** „Wertermittlungsbogen Wohngebäude“ als Eintrag 10 – **nicht umgesetzt**.
 
@@ -36,8 +36,8 @@ Diese Einträge nutzt die App heute als **Kundenschreiben nach DIN 5008** (Statu
 
 **Wichtig vor dem Import:**
 
-- Nach dem Import eines Originals ist der Eintrag **erst wieder wählbar, wenn Sie die Feldzuordnung bestätigt haben**. Bis dahin steht er auf „Zu prüfen“; der Brief ist in dieser Zeit nicht nutzbar. Das Studio fragt deshalb vorher nach („Eigene Originalvorlage importieren?“).
-- Nach der Bestätigung füllt die App das **Formular** aus, nicht mehr den Brief.
+- Solange das importierte Original noch nicht bestätigt ist („Zu prüfen“) oder fehlerhaft ist, verwendet die App für diesen Eintrag weiter den **Brief**. Der Katalog vermerkt dann: „Eine importierte Originalvorlage ist noch nicht aktiv (Zu prüfen).“
+- Nach der Bestätigung füllt die App das **Formular** aus, nicht mehr den Brief. Das Studio fragt vor dem Import nach („Eigene Originalvorlage importieren?“).
 - Zurück zum Brief geht es derzeit **nur von Hand**: App schließen und den Ordner `templates/<Katalog-ID>/` im Datenordner entfernen (vorher sichern). Eine Schaltfläche dafür gibt es noch nicht.
 - Ein Formular gilt meist nur für **einen** Versicherer. Der Brief dagegen ist versichererneutral.
 

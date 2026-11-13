@@ -15,12 +15,14 @@ import contextlib
 import json
 import logging
 import os
+import re
 import shutil
 import sys
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
+from enum import StrEnum
 from pathlib import Path
 from typing import Literal
 
@@ -57,7 +59,7 @@ from ..templates.resolver import ChecklistItem, FillPlan, resolve_fill_values
 from ..templates.schema import TemplateDefinition, TemplateStatus
 from ..validation.plausibility import check_plausibility
 from ..validation.validators import validate_case, validate_field
-from .case import Case, CaseSummary, ExportRecord, PipelineStage, SourceDocument
+from .case import Bundle, Case, CaseSummary, ExportRecord, PipelineStage, SourceDocument
 from .fields import FIELD_REGISTRY, FieldCategory, FieldType, get_field
 from .models import (
     Candidate,
@@ -197,6 +199,58 @@ class ExtractionSummary(BaseModel):
     counts: dict[str, int] = Field(default_factory=dict)
     warnings: list[ValidationMessage] = Field(default_factory=list)
     documents_used: int = 0
+
+
+class BatchItemStatus(StrEnum):
+    WAITING = "Wartet"
+    RUNNING = "Wird ausgewertet"
+    DONE = "Fertig"
+    NEEDS_PASSWORD = "Passwort erforderlich"  # noqa: S105 – Statusbezeichnung, kein Passwort
+    REJECTED = "Nicht verarbeitbar"
+    CANCELLED = "Abgebrochen"
+
+
+class BatchItem(BaseModel):
+    """Eine Datei in der Warteschlange einer Kundenmappe."""
+
+    file_name: str
+    path: str
+    status: BatchItemStatus = BatchItemStatus.WAITING
+    message: str = ""
+    case_id: str | None = None
+    doc_type: str | None = None  # deutsche Bezeichnung
+    insurer: str | None = None
+
+
+class BatchResult(BaseModel):
+    bundle_id: str
+    items: list[BatchItem] = Field(default_factory=list)
+    case_ids: list[str] = Field(default_factory=list)
+
+
+class BundleCaseRow(BaseModel):
+    """Zeile der Mappen-Übersicht: ein Vertrag = ein Vorgang = ein Anwenderwunsch."""
+
+    case_id: str
+    title: str
+    insurer: str | None = None
+    contract_hint: str | None = None  # nur letzte Stellen der Vertragsnummer
+    doc_types: list[str] = Field(default_factory=list)
+    document_count: int = 0
+    template_id: str | None = None
+    template_title: str | None = None
+    ready: bool = False
+    blocking_count: int = 0
+    exported_file: str | None = None
+    stage_label: str = ""
+
+
+class BundleExportRow(BaseModel):
+    case_id: str
+    title: str
+    ok: bool
+    path: Path | None = None
+    message: str = ""
 
 
 class LetterExportIdentity(BaseModel):
@@ -472,18 +526,21 @@ class AppService:
                 update["source_document_id"] = new_id
             case.contract_fields[key] = fv.model_copy(update=update)
 
-    def _drop_document_values(self, case: Case, document_id: str) -> None:
+    def _drop_document_values(self, case: Case, document_id: str) -> set[str]:
         """Werte und Belege eines entfernten/ausgeschlossenen Dokuments zurücknehmen.
 
         Bestätigte Werte aus diesem Dokument werden zurückgesetzt (sie dürfen nicht mehr
         ohne Quelle in eine Vorlage gelangen). Manuell eingetragene Werte bleiben.
+        Gibt die Schlüssel der zurückgesetzten bestätigten Werte zurück.
         """
+        reset: set[str] = set()
         for key, fv in list(case.contract_fields.items()):
             remaining = [c for c in fv.candidates if c.evidence.document_id != document_id]
             if fv.status == FieldStatus.CONFIRMED and fv.source_document_id == document_id:
                 case.contract_fields[key] = FieldValue(
                     key=key, status=FieldStatus.MISSING, candidates=remaining, note=SOURCE_REMOVED_NOTE
                 )
+                reset.add(key)
                 case.history.append(
                     HistoryEntry(
                         action="source_removed",
@@ -495,6 +552,16 @@ class AppService:
                 )
             elif len(remaining) != len(fv.candidates):
                 case.contract_fields[key] = fv.model_copy(update={"candidates": remaining})
+        return reset
+
+    def _mark_source_removed(self, case: Case, keys: set[str]) -> None:
+        """Hinweis nach der Neu-Auswertung erhalten, solange der Wert noch nicht neu bestätigt wurde."""
+        for key in keys:
+            fv = case.contract_fields.get(key)
+            if fv is not None and not fv.status.is_released and not fv.note:
+                case.contract_fields[key] = fv.model_copy(update={"note": SOURCE_REMOVED_NOTE})
+        if keys:
+            self.save_case(case)
 
     def remove_document(self, case: Case, document_id: str) -> None:
         removed = self._doc(case, document_id)
@@ -510,11 +577,13 @@ class AppService:
             if document_id in self._passwords:
                 self._passwords[successor.id] = self._passwords[document_id]
             self._repoint_document_values(case, document_id, successor.id)
+            reset: set[str] = set()
         else:
-            self._drop_document_values(case, document_id)
+            reset = self._drop_document_values(case, document_id)
         self.repo.remove_document(case, document_id)
         self._passwords.pop(document_id, None)
         self.extract_data(case)
+        self._mark_source_removed(case, reset)
 
     def set_document_excluded(self, case: Case, document_id: str, excluded: bool) -> None:
         doc = self._doc(case, document_id)
@@ -526,9 +595,9 @@ class AppService:
                 detail=document_id,
             )
         )
-        if excluded:
-            self._drop_document_values(case, document_id)
+        reset = self._drop_document_values(case, document_id) if excluded else set()
         self.extract_data(case)
+        self._mark_source_removed(case, reset)
 
     def set_document_type(self, case: Case, document_id: str, doc_type: DocumentType) -> None:
         doc = self._doc(case, document_id)
@@ -712,18 +781,154 @@ class AppService:
     # ------------------------------------------------------------------
     # Lokale KI (optional)
     # ------------------------------------------------------------------
+    def ai_models_status(self) -> dict[str, object]:
+        """Status der gewählten Modelle: aktiv, Ausweichmodell, Gegenprüfung (für Einstellungen/Vorgang)."""
+        from ..local_ai.ollama_client import OllamaClient, OllamaError
+
+        s = self.settings
+        roles = {"active": s.ai_model, "fallback": s.ai_fallback_model, "crosscheck": s.ai_crosscheck_model}
+        present: dict[str, bool] = {}
+        running = False
+        try:
+            client = OllamaClient(s.ollama_url, timeout=3.0)
+            running = client.is_running()
+            for m in {m for m in roles.values() if m}:
+                present[m] = running and client.has_model(m)
+        except OllamaError:
+            present = {m: False for m in roles.values() if m}
+        will_run = None
+        if present.get(s.ai_model or ""):
+            will_run = s.ai_model
+        elif s.ai_fallback_model and present.get(s.ai_fallback_model):
+            will_run = s.ai_fallback_model
+        if not s.ai_enabled:
+            message = "Lokale KI ist ausgeschaltet – die App arbeitet mit Textebene und Tesseract."
+        elif not running:
+            message = "Der lokale Ollama-Dienst läuft nicht."
+        elif will_run == s.ai_model:
+            message = f"Bereit: {s.ai_model} ist aktiv."
+        elif will_run:
+            message = f"{s.ai_model} fehlt – das Ausweichmodell {will_run} wird verwendet."
+        else:
+            message = "Weder das aktive noch das Ausweichmodell ist heruntergeladen."
+        return {
+            "roles": roles,
+            "models": present,
+            "running": running,
+            "will_run": will_run,
+            "ready": bool(s.ai_enabled and running and will_run),
+            "message": message,
+        }
+
+    def apply_ai_profile(self, key: str) -> Settings:
+        from ..local_ai.profiles import PROFILES, settings_for_profile
+
+        if key not in PROFILES:
+            raise SettingsError("Unbekanntes KI-Profil.")
+        return self.update_settings(**settings_for_profile(key))
+
+    def set_ai_models(
+        self, active: str, fallback: str | None = None, crosscheck: str | None = None
+    ) -> Settings:
+        """Der Anwender entscheidet, welches Modell aktiv läuft und welches einspringt."""
+        from ..local_ai.ollama_client import InvalidModelNameError, validate_model_name
+
+        try:
+            for m in (active, fallback, crosscheck):
+                if m:
+                    validate_model_name(m)
+        except InvalidModelNameError as exc:
+            raise SettingsError(str(exc)) from exc
+        if fallback == active:
+            fallback = None
+        return self.update_settings(
+            ai_model=active, ai_fallback_model=fallback, ai_crosscheck_model=crosscheck
+        )
+
+    def _doc_info(self, doc: SourceDocument) -> SourceDocInfo:
+        cls = doc.classification
+        return SourceDocInfo(
+            document_id=doc.id,
+            file_name=doc.original_name,
+            doc_type=cls.doc_type if cls else DocumentType.UNKNOWN,
+            document_date=cls.document_date if cls else None,
+            effective_date=cls.effective_date if cls else None,
+        )
+
+    def _run_ai_model(
+        self, model: str, client, doc: SourceDocument, weak, images, targets
+    ) -> tuple[list[Candidate], list[str], bool]:  # noqa: ANN001
+        """Ein Modell auf die schwachen Seiten eines Dokuments anwenden. Rückgabe (Vorschläge, Fehler, ok)."""
+        from ..local_ai.ollama_ocr import OllamaOcrBackend
+        from ..local_ai.status import MODEL_CATALOG
+        from ..local_ai.vlm_extractor import VlmExtractor
+        from .models import DocumentText
+
+        entry = MODEL_CATALOG.get(model)
+        kind = entry.kind if entry else "vlm"
+        errors: list[str] = []
+        if kind == "ocr":
+            backend = OllamaOcrBackend(self.settings, model=model, client=client)
+            backend.is_available()
+            pages = []
+            for p in weak:
+                try:
+                    pages.append(
+                        backend.recognize(images[p.page_number], p.page_number, p.width, p.height, 150)
+                    )
+                except Exception as exc:  # noqa: BLE001 – lokale KI darf den Ablauf nie abbrechen
+                    errors.append(
+                        f"{model}, Seite {p.page_number}: {getattr(exc, 'args', [''])[0] or type(exc).__name__}"
+                    )
+            pages = [pg for pg in pages if pg.words]
+            if not pages:
+                return [], errors or [f"{model}: kein Text erkannt."], False
+            res = extract_candidates(DocumentText(document_id=doc.id, pages=pages), self._doc_info(doc))
+            cands = [
+                c.model_copy(update={"evidence": c.evidence.model_copy(update={"bbox": None})})
+                for key, lst in res.candidates.items()
+                if key in FIELD_REGISTRY and not FIELD_REGISTRY[key].legal_relevant
+                for c in lst
+            ]
+            return cands, errors, True
+        if not targets:
+            return [], [], True
+        extractor = VlmExtractor(
+            client,
+            model,
+            timeout=float(self.settings.ai_timeout_s),
+            max_tokens=self.settings.ai_max_tokens,
+            normalizer=lambda key, raw: normalize_value(get_field(key), raw)[0],
+        )
+        res = extractor.extract(
+            list(images.items()),
+            doc.id,
+            doc.original_name,
+            targets,
+            page_texts={p.page_number: p.text for p in weak},
+        )
+        return list(res.candidates), list(res.errors), res.ok
+
     def run_local_ai(
         self, case: Case, *, progress: ProgressCallback | None = None, cancel: threading.Event | None = None
     ) -> dict[str, object]:
-        """Zweitprüfung schwieriger Seiten mit dem lokalen Vision-Modell (nur wenn aktiviert und bereit)."""
+        """Optionale lokale KI für schwierige Seiten (nur wenn aktiviert und ein Modell bereit ist).
+
+        * Aktives Modell (Standard ``glm-ocr``); fehlt es oder scheitert es an einem Dokument,
+          springt das Ausweichmodell ein (Standard ``qwen3-vl:4b``).
+        * Optional: Gegenprüfung mit einem weiteren Modell (z. B. ``gemma4:e4b``).
+        Alle Vorschläge laufen durch ``reconcile``: Abweichungen -> CONFLICT, keine Auftragsdaten,
+        bestätigte Werte werden nie still geändert.
+        """
         from ..local_ai.ollama_client import OllamaClient
         from ..local_ai.reconcile import reconcile
-        from ..local_ai.status import LocalAiState, detect_status
-        from ..local_ai.vlm_extractor import VlmExtractor, check_field_keys
+        from ..local_ai.vlm_extractor import check_field_keys
 
-        status = detect_status(self.settings)
-        if status.state != LocalAiState.READY:
-            raise ServiceError(f"Lokale KI nicht verfügbar: {status.message}")
+        status = self.ai_models_status()
+        if not self.settings.ai_enabled:
+            raise ServiceError("Die lokale KI ist ausgeschaltet (Einstellungen).")
+        if not status["ready"]:
+            raise ServiceError(str(status["message"]))
         targets = [
             k
             for k, fdef in FIELD_REGISTRY.items()
@@ -733,7 +938,7 @@ class AppService:
             and (
                 case.contract_fields.get(k) is None
                 or case.contract_fields[k].status
-                in (FieldStatus.MISSING, FieldStatus.UNCLEAR, FieldStatus.CONFLICT)
+                in (FieldStatus.MISSING, FieldStatus.UNCLEAR, FieldStatus.CONFLICT, FieldStatus.EXTRACTED)
             )
         ]
         if case.template_id:
@@ -742,41 +947,75 @@ class AppService:
                 relevant = tpl.referenced_keys()
                 targets = [k for k in targets if k in relevant] or targets
         targets = check_field_keys(targets) if targets else []
-        if not targets:
-            return {"ok": True, "message": "Keine offenen Felder für die lokale KI.", "candidates": 0}
-        client = OllamaClient(self.settings.ollama_url, timeout=10.0)
-        extractor = VlmExtractor(
-            client,
-            self.settings.ai_model,
-            timeout=float(self.settings.ai_timeout_s),
-            max_tokens=self.settings.ai_max_tokens,
-            normalizer=lambda key, raw: normalize_value(get_field(key), raw)[0],
-        )
-        all_candidates: list[Candidate] = []
-        errors: list[str] = []
+        s = self.settings
+        primary = str(status["will_run"])
+        fallback = (
+            s.ai_fallback_model
+            if (
+                s.ai_fallback_model
+                and status["models"].get(s.ai_fallback_model)
+                and s.ai_fallback_model != primary
+            )
+            else None
+        )  # type: ignore[union-attr]
+        cross = (
+            s.ai_crosscheck_model
+            if (s.ai_crosscheck_model and status["models"].get(s.ai_crosscheck_model))
+            else None
+        )  # type: ignore[union-attr]
         docs = [d for d in case.active_documents() if d.text is not None]
+        client = OllamaClient(s.ollama_url, timeout=10.0)
+        candidates: list[Candidate] = []
+        errors: list[str] = []
+        used: set[str] = set()
         for i, doc in enumerate(docs):
             if cancel is not None and cancel.is_set():
                 break
-            weak_pages = [p for p in doc.text.pages if p.quality.value != "GOOD"] or doc.text.pages[:2]  # type: ignore[union-attr]
-            pages = [
-                (p.page_number, self.document_page_image(case, doc.id, p.page_number, dpi=150))
-                for p in weak_pages[:3]
-            ]
-            page_texts = {p.page_number: p.text for p in weak_pages[:3]}
             if progress:
-                progress(i, len(docs), f"Lokale KI prüft Dokument {i + 1}/{len(docs)}")
-            res = extractor.extract(pages, doc.id, doc.original_name, targets, page_texts=page_texts)
-            all_candidates += res.candidates
-            errors += res.errors
-            if res.model_version:
-                case.metadata["lokale_ki_modell"] = res.model_version
-        new_fields, history = reconcile(case.contract_fields, all_candidates)
+                progress(i, len(docs), f"Lokale KI ({primary}) prüft Dokument {i + 1}/{len(docs)}")
+            pages = doc.text.pages  # type: ignore[union-attr]
+            weak = (
+                [p for p in pages if p.quality.value != "GOOD" or p.method.value != "PDF_TEXT"] or pages[:2]
+            )[:3]
+            images = {
+                p.page_number: self.document_page_image(case, doc.id, p.page_number, dpi=150) for p in weak
+            }
+            cands, errs, ok = self._run_ai_model(primary, client, doc, weak, images, targets)
+            errors += errs
+            used.add(primary)
+            if (not ok or not cands) and fallback and not (cancel is not None and cancel.is_set()):
+                if progress:
+                    progress(i, len(docs), f"Ausweichmodell {fallback} für Dokument {i + 1}/{len(docs)}")
+                cands2, errs2, _ = self._run_ai_model(fallback, client, doc, weak, images, targets)
+                cands += cands2
+                errors += errs2
+                used.add(fallback)
+            if cross and not (cancel is not None and cancel.is_set()):
+                cands3, errs3, _ = self._run_ai_model(cross, client, doc, weak, images, targets)
+                cands += cands3
+                errors += errs3
+                used.add(cross)
+            candidates += cands
+        if progress:
+            progress(len(docs), max(len(docs), 1), "Lokale KI abgeschlossen")
+        new_fields, history = reconcile(case.contract_fields, candidates)
         case.contract_fields = new_fields
         case.history.extend(history)
+        case.metadata["lokale_ki_modelle"] = ", ".join(sorted(used))
         self._revalidate(case)
         self.save_case(case)
-        return {"ok": not errors, "errors": errors, "candidates": len(all_candidates)}
+        log.info(
+            "Lokale KI abgeschlossen: vorgang=%s vorschlaege=%d fehler=%d",
+            case.id,
+            len(candidates),
+            len(errors),
+        )
+        return {
+            "ok": not errors,
+            "errors": errors,
+            "candidates": len(candidates),
+            "models_used": sorted(used),
+        }
 
     # ------------------------------------------------------------------
     # Stufe 6: Datenfreigabe (Nutzeraktionen)
@@ -1398,6 +1637,273 @@ class AppService:
         self.discard_preview(case.id)
         log.info("PDF erzeugt: vorgang=%s vorlage=%s", case.id, entry.template_id)
         return ExportOutcome(path=exported.path, qa=qa, log_entry=entry)
+
+    # ------------------------------------------------------------------
+    # Kundenmappen / Stapelverarbeitung
+    # ------------------------------------------------------------------
+    def create_bundle(self, title: str) -> Bundle:
+        return self.repo.create_bundle(title)
+
+    def list_bundles(self) -> list[Bundle]:
+        return self.repo.list_bundles()
+
+    def get_bundle(self, bundle_id: str) -> Bundle:
+        return self.repo.get_bundle(bundle_id)
+
+    def rename_bundle(self, bundle_id: str, title: str) -> None:
+        self.repo.rename_bundle(bundle_id, title)
+
+    def delete_bundle(self, bundle_id: str, delete_cases: bool = False) -> None:
+        for summary in self.repo.list_cases(bundle_id=bundle_id, include_archived=True):
+            self.discard_preview(summary.id)
+        self.repo.delete_bundle(bundle_id, delete_cases=delete_cases)
+
+    def bundle_cases(self, bundle_id: str) -> list[CaseSummary]:
+        return self.repo.list_cases(bundle_id=bundle_id, include_archived=True)
+
+    @staticmethod
+    def _contract_key(number: str | None) -> str | None:
+        if not number:
+            return None
+        key = re.sub(r"[^0-9a-z]", "", number.casefold())
+        return key or None
+
+    @staticmethod
+    def _contract_hint(number: str | None) -> str | None:
+        if not number:
+            return None
+        compact = re.sub(r"[^0-9A-Za-z]", "", number)
+        return f"…{compact[-4:]}" if len(compact) > 4 else compact
+
+    def import_into_bundle(
+        self,
+        bundle_id: str,
+        paths: list[Path],
+        *,
+        passwords: dict[str, str] | None = None,
+        progress: ProgressCallback | None = None,
+        cancel: threading.Event | None = None,
+    ) -> BatchResult:
+        """Mehrere Dateien nacheinander (Warteschlange) auswerten und nach Vertrag gruppieren.
+
+        * Jede Datei wird geprüft, gelesen (Textebene/OCR) und klassifiziert – lesend, ohne Änderung.
+        * Dateien mit derselben Vertragsnummer kommen in **einen** Vorgang (z. B. Police + Nachtrag),
+          auch zu einem bereits vorhandenen Vorgang der Mappe. Andere Verträge bilden eigene Vorgänge.
+        * Danach je Vorgang: Datenextraktion. Der Anwenderwunsch (Vorlage) wird je Vorgang gewählt.
+        Passwörter (``passwords``: Dateipfad -> Passwort) bleiben nur im Arbeitsspeicher.
+        """
+        bundle = self.repo.get_bundle(bundle_id)
+        passwords = passwords or {}
+        items = [BatchItem(file_name=Path(p).name, path=str(p)) for p in paths]
+        staged: list[tuple[BatchItem, object, object, object, str | None]] = []
+        total = len(items) * 2
+        for idx, item in enumerate(items):
+            if cancel is not None and cancel.is_set():
+                for rest in items[idx:]:
+                    rest.status = BatchItemStatus.CANCELLED
+                    rest.message = "Abgebrochen – nicht verarbeitet."
+                break
+            if progress:
+                progress(idx, total, f"Datei {idx + 1}/{len(items)} wird geprüft und gelesen")
+            item.status = BatchItemStatus.RUNNING
+            pw = passwords.get(item.path)
+            check = check_document(Path(item.path), password=pw)
+            codes = {i.code for i in check.issues}
+            if "PASSWORD_REQUIRED" in codes or "WRONG_PASSWORD" in codes:
+                item.status = BatchItemStatus.NEEDS_PASSWORD
+                item.message = "Passwort erforderlich – bitte eingeben und erneut hinzufügen."
+                continue
+            if not check.ok:
+                item.status = BatchItemStatus.REJECTED
+                errs = [i.message for i in check.issues if i.severity == Severity.ERROR]
+                item.message = errs[0] if errs else "Die Datei kann nicht verarbeitet werden."
+                continue
+            try:
+                text = self.ocr.recognize_document(
+                    Path(item.path), "D-STAPEL", check, password=pw, cancel=cancel
+                )
+            except RecognitionCancelled:
+                item.status = BatchItemStatus.CANCELLED
+                item.message = "Abgebrochen."
+                continue
+            except (RecognitionError, DocumentAccessError) as exc:
+                item.status = BatchItemStatus.REJECTED
+                item.message = getattr(exc, "user_message", None) or "Text konnte nicht gelesen werden."
+                continue
+            cls = classify_document(text)
+            info = SourceDocInfo(
+                "D-STAPEL", item.file_name, cls.doc_type, cls.document_date, cls.effective_date
+            )
+            res = extract_candidates(text, info)
+            best = res.best("contract.number")
+            number = (best.normalized if best else None) or (
+                cls.contract_numbers[0] if cls.contract_numbers else None
+            )
+            ins = res.best("insurer.name")
+            item.insurer = cls.insurer_hint or (ins.normalized or ins.value if ins else None)
+            item.doc_type = cls.doc_type.label_de
+            staged.append((item, check, text, cls, number))
+        # Gruppieren: vorhandene Vorgänge der Mappe zuerst (z. B. später nachgereichter Nachtrag)
+        groups: dict[str, Case] = {}
+        for summary in self.repo.list_cases(bundle_id=bundle_id, include_archived=True):
+            existing = self.repo.load_case(summary.id)
+            fv = existing.contract_fields.get("contract.number")
+            key = self._contract_key(fv.normalized_value if fv else None)
+            if key is None and fv is not None:
+                key = next((self._contract_key(c.normalized) for c in fv.candidates if c.normalized), None)
+            if key:
+                groups.setdefault(key, existing)
+        touched: dict[str, Case] = {}
+        for n, (item, _check, text, cls, number) in enumerate(staged):
+            if cancel is not None and cancel.is_set():
+                item.status = BatchItemStatus.CANCELLED
+                item.message = "Abgebrochen – nicht übernommen."
+                continue
+            if progress:
+                progress(len(items) + n, total, f"Datei {n + 1}/{len(staged)} wird dem Vertrag zugeordnet")
+            key = self._contract_key(number)
+            case = groups.get(key) if key else None
+            if case is None:
+                hint = self._contract_hint(number)
+                label = item.insurer or "Versicherer unbekannt"
+                case = self.repo.create_case(
+                    f"{bundle.title}: {label}" + (f" (Vertrag {hint})" if hint else "")
+                )
+                case.bundle_id = bundle_id
+                self.save_case(case)
+                if key:
+                    groups[key] = case
+            result = self.add_document(case, Path(item.path), password=passwords.get(item.path))
+            if result.document is None:
+                item.status = BatchItemStatus.REJECTED
+                item.message = result.message
+                continue
+            doc = case.document(result.document.id)
+            if doc is not None and doc.text is None and not doc.excluded:
+                doc.text = text.model_copy(update={"document_id": doc.id})  # type: ignore[union-attr]
+                doc.classification = cls  # type: ignore[assignment]
+                case.stage = max(case.stage, PipelineStage.TEXTERKENNUNG)
+                self.save_case(case)
+            item.case_id = case.id
+            item.status = BatchItemStatus.DONE
+            item.message = (
+                "Dublette – bereits im Vorgang enthalten."
+                if result.duplicate
+                else f"Zugeordnet: {case.display_title()}"
+            )
+            touched[case.id] = case
+        for case in touched.values():
+            self.extract_data(case)
+        if progress:
+            progress(total, max(total, 1), "Stapel abgeschlossen")
+        log.info(
+            "Stapel abgeschlossen: mappe=%s dateien=%d vorgaenge=%d", bundle_id, len(items), len(touched)
+        )
+        return BatchResult(bundle_id=bundle_id, items=items, case_ids=list(touched))
+
+    def bundle_overview(self, bundle_id: str) -> list[BundleCaseRow]:
+        rows: list[BundleCaseRow] = []
+        choices = {c.catalog_id: c for c in self.template_choices()}
+        for summary in self.repo.list_cases(bundle_id=bundle_id, include_archived=True):
+            case = self.repo.load_case(summary.id)
+            ins = case.contract_fields.get("insurer.name")
+            num = case.contract_fields.get("contract.number")
+            number = (num.normalized_value if num else None) or next(
+                (c.normalized for c in (num.candidates if num else []) if c.normalized), None
+            )
+            row = BundleCaseRow(
+                case_id=case.id,
+                title=case.display_title(),
+                insurer=(ins.normalized_value or ins.value) if ins else None,
+                contract_hint=self._contract_hint(number),
+                doc_types=[
+                    d.classification.doc_type.label_de if d.classification else "noch nicht gelesen"
+                    for d in case.active_documents()
+                ],
+                document_count=len(case.active_documents()),
+                template_id=case.template_id,
+                template_title=choices[case.template_id].title if case.template_id in choices else None,
+                exported_file=case.exports[-1].file_name if case.exports else None,
+                stage_label=f"{int(case.stage)}/9 {case.stage.label_de}",
+            )
+            if case.template_id:
+                try:
+                    status = self.review_status(case)
+                    row.ready = status.ready
+                    row.blocking_count = len(status.blocking_items)
+                except ServiceError:
+                    row.blocking_count = 1
+            rows.append(row)
+        return rows
+
+    def generate_bundle(
+        self,
+        bundle_id: str,
+        *,
+        flatten: bool = False,
+        progress: ProgressCallback | None = None,
+        cancel: threading.Event | None = None,
+    ) -> list[BundleExportRow]:
+        """Alle fertig geprüften Vorgänge einer Mappe nacheinander erzeugen (Warteschlange).
+
+        Vorgänge ohne Vorlage oder mit offenen Pflichtpunkten werden übersprungen – mit Begründung.
+        """
+        summaries = self.repo.list_cases(bundle_id=bundle_id, include_archived=False)
+        out: list[BundleExportRow] = []
+        for i, summary in enumerate(summaries):
+            if cancel is not None and cancel.is_set():
+                out.append(
+                    BundleExportRow(case_id=summary.id, title=summary.title, ok=False, message="Abgebrochen.")
+                )
+                continue
+            if progress:
+                progress(i, len(summaries), f"Vorgang {i + 1}/{len(summaries)} wird erzeugt")
+            case = self.repo.load_case(summary.id)
+            if not case.template_id:
+                out.append(
+                    BundleExportRow(
+                        case_id=case.id,
+                        title=case.display_title(),
+                        ok=False,
+                        message="Keine Vorlage (Anwenderwunsch) gewählt.",
+                    )
+                )
+                continue
+            try:
+                status = self.review_status(case)
+                if not status.ready:
+                    n = len(status.blocking_items)
+                    out.append(
+                        BundleExportRow(
+                            case_id=case.id,
+                            title=case.display_title(),
+                            ok=False,
+                            message=f"{n} offene Pflichtpunkte – bitte im Vorgang prüfen.",
+                        )
+                    )
+                    continue
+                res = self.generate_pdf(case, flatten=flatten)
+                out.append(
+                    BundleExportRow(
+                        case_id=case.id,
+                        title=case.display_title(),
+                        ok=True,
+                        path=res.path,
+                        message="Erzeugt.",
+                    )
+                )
+            except (ServiceError, ExportBlockedError) as exc:
+                out.append(
+                    BundleExportRow(
+                        case_id=case.id,
+                        title=case.display_title(),
+                        ok=False,
+                        message=getattr(exc, "user_message", str(exc)),
+                    )
+                )
+        if progress:
+            progress(len(summaries), max(len(summaries), 1), "Mappe abgeschlossen")
+        return out
 
     # ------------------------------------------------------------------
     # Musterfall (synthetisch)

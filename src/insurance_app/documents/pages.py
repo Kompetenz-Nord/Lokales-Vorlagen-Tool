@@ -43,8 +43,12 @@ DEFAULT_IMAGE_DPI = 150.0
 #: Gültiger Bereich für dpi-Angaben aus Bild-Metadaten.
 MIN_METADATA_DPI = 50.0
 MAX_METADATA_DPI = 1200.0
-#: Obergrenze für gerenderte Seitenbilder (Pixel); größere Seiten werden mit weniger dpi gerendert.
+#: Obergrenze für gerenderte Seitenbilder (Pixel); größere Seiten werden mit weniger dpi gerendert
+#: bzw. Bilddateien verkleinert.
 MAX_RENDER_PIXELS = 60_000_000
+#: Obergrenze für angenommene Bilddateien je Seite (Pixel). Reicht für DIN A4 mit 1200 dpi
+#: (ca. 139 Mio.); größere Bilder lehnt die Eingangsprüfung ab (Schutz vor „Pixelbomben“).
+MAX_IMAGE_PIXELS = 150_000_000
 #: Zulässiger dpi-Bereich beim Rendern von PDF-Seiten.
 MIN_RENDER_DPI = 18
 MAX_RENDER_DPI = 1200
@@ -192,6 +196,19 @@ def image_effective_dpi(image: Image.Image) -> float:
 # ---------------------------------------------------------------------------
 
 
+def _reduce_image(image: Image.Image, pixels: int) -> Image.Image:
+    """Sehr großes Bild ganzzahlig verkleinern (höchstens ``MAX_RENDER_PIXELS``), ohne Vollkopie."""
+    factor = max(2, math.ceil(math.sqrt(pixels / MAX_RENDER_PIXELS)))
+    if image.mode == "1":
+        image = image.convert("L")
+    elif image.mode in ("P", "PA"):
+        image = image.convert("RGBA")
+    try:
+        return image.reduce(factor)
+    except ValueError:  # Bildmodus ohne reduce-Unterstützung (z. B. 16 Bit)
+        return to_rgb(image).reduce(factor)
+
+
 def read_document_bytes(path: Path, max_size: int = MAX_FILE_SIZE_BYTES) -> bytes:
     """Datei vollständig lesen (nur lesend); Fehler als ``DocumentAccessError``."""
     try:
@@ -332,7 +349,8 @@ class PageSource:
 
         PDF: gerendert mit ``dpi`` (bei sehr großen Seiten automatisch weniger,
         siehe ``MAX_RENDER_PIXELS``). Bilddateien: native Auflösung, ``dpi``
-        wird ignoriert. Die tatsächliche Auflösung liefert ``image_effective_dpi``.
+        wird ignoriert; Bilder über ``MAX_RENDER_PIXELS`` werden verkleinert.
+        Die tatsächliche Auflösung liefert ``image_effective_dpi``.
         """
         self._check_page(page_number)
         if self._doc is not None:
@@ -364,14 +382,27 @@ class PageSource:
         try:
             if self.file_type == "tiff":
                 self._image.seek(page_number - 1)
-            raw = self._image.copy()
+            source = self._image
+            pixels = source.width * source.height
+            if pixels > MAX_RENDER_PIXELS:
+                raw = _reduce_image(source, pixels)
+                log.info("Bildseite %d wird verkleinert verarbeitet (sehr viele Bildpunkte)", page_number)
+            else:
+                raw = source.copy()
         except Image.DecompressionBombError as exc:
             raise DocumentAccessError("Das Bild hat zu viele Bildpunkte.") from exc
+        except MemoryError as exc:
+            raise DocumentAccessError("Das Bild ist zu groß für den verfügbaren Arbeitsspeicher.") from exc
         except (OSError, ValueError, SyntaxError, EOFError) as exc:
             raise DocumentAccessError("Die Bilddatei ist beschädigt und kann nicht gelesen werden.") from exc
         image = to_rgb(apply_orientation(raw, frame_info.orientation))
         image.info.pop("exif", None)
-        _set_image_dpi(image, frame_info.dpi_x, frame_info.dpi_y)
+        # Auflösung passend zur (ggf. verkleinerten) Pixelzahl: Seitengröße in Punkten bleibt gleich
+        _set_image_dpi(
+            image,
+            frame_info.dpi_x * image.width / frame_info.width_px,
+            frame_info.dpi_y * image.height / frame_info.height_px,
+        )
         return image
 
     # -- Lebenszyklus -----------------------------------------------------

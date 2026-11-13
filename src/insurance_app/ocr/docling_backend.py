@@ -9,6 +9,11 @@
 * OCR innerhalb von Docling: Tesseract-Kommandozeile (lokal).
 * Dateien werden als Bytes-Stream mit neutralem Namen übergeben – der
   Originaldateiname gelangt nicht in Docling.
+* Temporäre Dateien: Die Tesseract-Anbindung von Docling legt Seitenbilder als
+  temporäre Dateien ab. Mit ``temp_base`` (privater Temp-Ordner der App) landen
+  sie während der Konvertierung in einem eigenen Arbeitsordner (``0700``), der
+  danach gelöscht wird; Reste nach einem Absturz räumt die App beim Start auf.
+  Ohne ``temp_base`` nutzt Docling den System-Temp-Ordner.
 * Docling liefert Textelemente (Absätze/Zellen) mit Box, keine Einzelwörter.
   Wortboxen werden anteilig nach Zeichenzahl über die Elementbreite verteilt
   (Näherung; bei mehrzeiligen Absätzen ungenau). Jedes Element ist eine
@@ -22,6 +27,7 @@ import importlib.util
 import logging
 import os
 import sys
+import tempfile
 import threading
 import time
 from collections.abc import Iterator
@@ -37,6 +43,7 @@ from ..core.models import DocumentText, ExtractionMethod, PageText, TextLayerOri
 from ..core.settings import Settings
 from ..documents.filetypes import detect_file_type_from_bytes
 from ..documents.pages import PasswordRequiredError, WrongPasswordError, read_document_bytes, to_rgb
+from ..security.tempfiles import TempWorkspace
 from .base import OcrError, OcrUnavailableError, scale_bbox, weighted_mean_confidence, words_to_text
 from .page_quality import assess_text_quality
 
@@ -53,6 +60,7 @@ MSG_FAILED = "Die Docling-Konvertierung ist fehlgeschlagen."
 
 _OFFLINE_ENV = {"HF_HUB_OFFLINE": "1", "TRANSFORMERS_OFFLINE": "1", "HF_DATASETS_OFFLINE": "1"}
 _OFFLINE_LOCK = threading.Lock()
+_TEMPDIR_LOCK = threading.Lock()  # tempfile.tempdir ist prozessweit
 _MISSING_MODEL_ERRORS = frozenset(
     {"LocalEntryNotFoundError", "OfflineModeIsEnabled", "EntryNotFoundError", "RepositoryNotFoundError"}
 )
@@ -78,6 +86,25 @@ def offline_environment() -> Iterator[None]:
                     os.environ[key] = value
             if constants is not None and previous_constant is not None:
                 constants.HF_HUB_OFFLINE = previous_constant
+
+
+@contextlib.contextmanager
+def private_tempdir(temp_base: Path | None) -> Iterator[Path | None]:
+    """``tempfile``-Standardordner für die Dauer des Blocks auf einen privaten Arbeitsordner setzen.
+
+    Der Arbeitsordner (``<temp_base>/docling-<zufall>``, Rechte ``0700``) wird danach
+    gelöscht und ``tempfile.tempdir`` wiederhergestellt. Ohne ``temp_base`` passiert nichts.
+    """
+    if temp_base is None:
+        yield None
+        return
+    with _TEMPDIR_LOCK, TempWorkspace(Path(temp_base), "docling") as work:
+        previous = tempfile.tempdir
+        tempfile.tempdir = str(work)
+        try:
+            yield work
+        finally:
+            tempfile.tempdir = previous
 
 
 def _looks_like_missing_model(exc: BaseException) -> bool:
@@ -206,12 +233,15 @@ class DoclingBackend:
         tesseract_cmd: str | None = None,
         artifacts_path: Path | None = None,
         settings: Settings | None = None,
+        temp_base: Path | None = None,
     ) -> None:
+        """``temp_base``: privater Temp-Ordner der App (z. B. ``paths.temp_dir``) für Zwischendateien."""
         self.languages = languages
         self.tesseract_cmd = tesseract_cmd
         env_path = os.environ.get("DOCLING_ARTIFACTS_PATH")
         self.artifacts_path = artifacts_path or (Path(env_path) if env_path else None)
         self.settings = settings or Settings()
+        self.temp_base = Path(temp_base) if temp_base is not None else None
         self._converter: Any | None = None
         self._lock = threading.Lock()
 
@@ -277,7 +307,8 @@ class DoclingBackend:
                     converter = self._converter
                 from docling.datamodel.base_models import DocumentStream
 
-                return converter.convert(DocumentStream(name=name, stream=BytesIO(data)))
+                with private_tempdir(self.temp_base):
+                    return converter.convert(DocumentStream(name=name, stream=BytesIO(data)))
             except ImportError as exc:
                 raise OcrUnavailableError(MSG_NOT_INSTALLED) from exc
             except Exception as exc:  # Fehler der Fremdbibliothek kapseln

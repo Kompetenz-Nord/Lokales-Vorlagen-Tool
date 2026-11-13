@@ -41,3 +41,26 @@ def test_parse_month(raw, expected):
 def test_fold_and_truncate():
     assert fold("  Straße  Übernahme ") == "strasse uebernahme"
     assert truncate("x" * 200, 10).endswith("…") and len(truncate("x" * 200, 10)) == 10
+
+
+# EXT-12: zweistellige Jahre – optionale, feldabhängige Jahrhundertwahl (Standard unverändert)
+def test_ext_12_default_pivot_unchanged():
+    assert parse_german_date("03.04.56") == date(2056, 4, 3)
+    assert parse_german_date("01.08.72") == date(1972, 8, 1)
+
+
+def test_ext_12_past_only_for_birth_dates():
+    today = date(2026, 11, 13)
+    assert parse_german_date("03.04.56", past_only=True, today=today) == date(1956, 4, 3)
+    assert parse_german_date("13.11.26", past_only=True, today=today) == date(2026, 11, 13)
+    assert parse_german_date("14.11.26", past_only=True, today=today) == date(1926, 11, 14)
+    assert parse_german_date("03.04.1956", past_only=True, today=today) == date(1956, 4, 3)
+
+
+def test_ext_12_future_window_for_other_dates():
+    today = date(2026, 11, 13)
+    assert parse_german_date("01.08.72", max_future_years=50, today=today) == date(2072, 8, 1)
+    assert parse_german_date("01.01.76", max_future_years=50, today=today) == date(2076, 1, 1)
+    assert parse_german_date("01.01.77", max_future_years=50, today=today) == date(1977, 1, 1)
+    found = find_dates("vom 01.01.80 bis 01.01.45", max_future_years=50, today=today)
+    assert [d for d, _ in found] == [date(1980, 1, 1), date(2045, 1, 1)]

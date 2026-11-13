@@ -35,6 +35,7 @@ import shutil
 import stat
 import tempfile
 import zipfile
+import zlib
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Literal
@@ -770,7 +771,7 @@ class TemplateRegistry:
         members = _read_package(Path(zip_path))
         try:
             manifest = json.loads(members["manifest.json"].decode("utf-8"))
-        except (UnicodeDecodeError, ValueError) as exc:
+        except (UnicodeDecodeError, ValueError, RecursionError) as exc:
             raise TemplateRegistryError("Das Paket enthält kein gültiges Manifest.") from exc
         if not isinstance(manifest, dict):
             raise TemplateRegistryError("Das Paket enthält kein gültiges Manifest.")
@@ -847,6 +848,28 @@ def _safe_member_name(name: str) -> bool:
     return all(p not in ("", ".", "..") for p in parts)
 
 
+def _zip_read_errors() -> tuple[type[BaseException], ...]:
+    """Ausnahmen, die beim Lesen eines beschädigten ZIP-Archivs auftreten können."""
+    errors: list[type[BaseException]] = [
+        zipfile.BadZipFile,
+        zipfile.LargeZipFile,
+        OSError,  # u. a. bz2: "Invalid data stream"
+        RuntimeError,
+        NotImplementedError,  # unbekanntes Kompressionsverfahren
+        zlib.error,  # zerstörter Deflate-Datenstrom
+        EOFError,  # abgeschnittener Datenstrom
+        ValueError,
+    ]
+    with contextlib.suppress(ImportError):
+        import lzma
+
+        errors.append(lzma.LZMAError)
+    return tuple(errors)
+
+
+_ZIP_READ_ERRORS = _zip_read_errors()
+
+
 def _read_package(zip_path: Path) -> dict[str, bytes]:
     if not zip_path.is_file() or not zipfile.is_zipfile(zip_path):
         raise TemplateRegistryError("Die Datei ist kein gültiges Vorlagenpaket (ZIP).")
@@ -879,7 +902,7 @@ def _read_package(zip_path: Path) -> dict[str, bytes]:
                 out[name] = data
     except TemplateRegistryError:
         raise
-    except (zipfile.BadZipFile, OSError, RuntimeError, NotImplementedError) as exc:
+    except _ZIP_READ_ERRORS as exc:
         raise TemplateRegistryError("Das Vorlagenpaket ist beschädigt.") from exc
     missing = [m for m in PACKAGE_MEMBERS if m not in out]
     if missing:

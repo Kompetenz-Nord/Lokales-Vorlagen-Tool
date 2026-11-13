@@ -526,6 +526,7 @@ class OllamaClient:
         schema: dict[str, Any],
         max_tokens: int = 1024,
         timeout: float = 120.0,
+        num_ctx: int | None = None,
     ) -> dict[str, Any]:
         """Eine Chat-Anfrage mit JSON-Schema (``format``), ``temperature=0`` und Token-Limit.
 
@@ -545,6 +546,8 @@ class OllamaClient:
             "stream": False,
             "options": {"temperature": 0, "num_predict": int(max_tokens)},
         }
+        if num_ctx:
+            payload["options"]["num_ctx"] = int(num_ctx)
         started = time.monotonic()
         data = self._request_json("POST", "/api/chat", payload, timeout=timeout)
         duration = time.monotonic() - started
@@ -568,3 +571,48 @@ class OllamaClient:
             raise InvalidModelResponseError()
         log.info("Strukturierte KI-Antwort erhalten (%.1f s, %d Bilder)", duration, len(images_b64))
         return parsed
+
+    def chat_text(
+        self,
+        model: str,
+        prompt: str,
+        images_b64: list[str],
+        *,
+        max_tokens: int = 4096,
+        timeout: float = 180.0,
+        num_ctx: int | None = 16384,
+    ) -> str:
+        """Freitext-Antwort (z. B. Texterkennung mit GLM-OCR: Prompt „Text Recognition:“).
+
+        ``temperature=0``; :class:`InvalidModelResponseError` bei leerer oder abgeschnittener Antwort.
+        """
+        model_name = validate_model_name(model)
+        options: dict[str, Any] = {"temperature": 0, "num_predict": int(max_tokens)}
+        if num_ctx:
+            options["num_ctx"] = int(num_ctx)
+        payload: dict[str, Any] = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt, "images": list(images_b64)}],
+            "stream": False,
+            "options": options,
+        }
+        started = time.monotonic()
+        data = self._request_json("POST", "/api/chat", payload, timeout=timeout)
+        if not isinstance(data, dict):
+            raise InvalidModelResponseError()
+        if isinstance(data.get("error"), str):
+            raise OllamaRequestError("Die lokale KI meldet einen Fehler.", detail=data["error"][:300])
+        message = data.get("message")
+        content = message.get("content") if isinstance(message, dict) else None
+        if not isinstance(content, str) or not content.strip():
+            raise InvalidModelResponseError("Die lokale KI hat keinen Text geliefert.")
+        if data.get("done_reason") == "length":
+            raise InvalidModelResponseError(
+                "Die Antwort der lokalen KI wurde abgeschnitten (Token-Limit erreicht) und wird nicht verwendet."
+            )
+        log.info(
+            "Text-Antwort der lokalen KI erhalten (%.1f s, %d Bilder)",
+            time.monotonic() - started,
+            len(images_b64),
+        )
+        return _strip_wrappers(content)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import stat
 import threading
 
 import pytest
@@ -16,7 +18,8 @@ def test_schema_v1_created(tmp_path):
     with Database(tmp_path / "db" / "test.sqlite3") as db:
         names = {r["name"] for r in db.query_all("SELECT name FROM sqlite_master WHERE type = 'table'")}
         assert names >= TABLES
-        assert db.schema_version() == LATEST_SCHEMA_VERSION == 1
+        # Version 2 (SVC-04/05): Spalte cases.revision für die optimistische Sperre
+        assert db.schema_version() == LATEST_SCHEMA_VERSION == 3  # v3: Kundenmappen (bundles, cases.bundle_id)
         cols = {r["name"] for r in db.query_all("PRAGMA table_info(cases)")}
         assert {
             "id",
@@ -28,6 +31,7 @@ def test_schema_v1_created(tmp_path):
             "archived",
             "data_json",
             "search_text",
+            "revision",
         } <= cols
         hist = {r["name"] for r in db.query_all("PRAGMA table_info(history)")}
         assert {
@@ -110,9 +114,9 @@ def test_reopen_keeps_data_and_version(tmp_path):
     with Database(path) as db:
         db.execute("INSERT INTO cases(id, created_at, updated_at, data_json) VALUES ('V1', 'a', 'a', '{}')")
     with Database(path) as db:
-        assert db.schema_version() == 1
+        assert db.schema_version() == LATEST_SCHEMA_VERSION
         assert db.query_one("SELECT COUNT(*) FROM cases")[0] == 1
-        assert db.query_one("SELECT COUNT(*) FROM schema_migrations")[0] == 1
+        assert db.query_one("SELECT COUNT(*) FROM schema_migrations")[0] == LATEST_SCHEMA_VERSION
 
 
 def test_newer_schema_is_rejected(tmp_path):
@@ -165,3 +169,62 @@ def test_concurrent_writes_are_serialized(tmp_path):
         assert db.query_one("SELECT COUNT(*) FROM cases")[0] == 100
         assert db.size_bytes() > 0
         db.checkpoint()
+
+
+# ---------------------------------------------------------------------------
+# Regressionen
+# ---------------------------------------------------------------------------
+
+
+def test_svc_04_migration_from_v1_sets_revision_one(tmp_path):
+    from insurance_app.storage.db import MIGRATIONS
+
+    path = tmp_path / "alt.sqlite3"
+    conn = sqlite3.connect(path)
+    conn.execute("CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)")
+    for statement in MIGRATIONS[1]:
+        conn.execute(statement)
+    conn.execute("INSERT INTO schema_migrations(version, applied_at) VALUES (1, 'x')")
+    conn.execute("INSERT INTO cases(id, created_at, updated_at, data_json) VALUES ('V1', 'a', 'a', '{}')")
+    conn.commit()
+    conn.close()
+    with Database(path) as db:
+        assert db.schema_version() == LATEST_SCHEMA_VERSION
+        assert db.query_one("SELECT revision FROM cases WHERE id = 'V1'")[0] == 1
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX-Dateirechte")
+def test_priv_01_wal_and_shm_are_private_from_first_session(tmp_path):
+    old = os.umask(0o022)
+    try:
+        path = tmp_path / "daten" / "vorgaenge.sqlite3"
+        db = Database(path)
+        try:
+            with db.transaction() as conn:
+                conn.execute(
+                    "INSERT INTO cases(id, created_at, updated_at, data_json) VALUES ('V1', 'a', 'a', '{}')"
+                )
+            for suffix in ("", "-wal", "-shm"):
+                p = path.with_name(path.name + suffix)
+                assert p.exists(), suffix
+                assert stat.S_IMODE(p.stat().st_mode) == 0o600, suffix
+        finally:
+            db.close()
+    finally:
+        os.umask(old)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX-Dateirechte")
+def test_priv_01_existing_world_readable_files_are_repaired(tmp_path):
+    path = tmp_path / "t.sqlite3"
+    with Database(path) as db:
+        db.execute("INSERT INTO cases(id, created_at, updated_at, data_json) VALUES ('V1', 'a', 'a', '{}')")
+    os.chmod(path, 0o644)
+    db = Database(path)
+    try:
+        for suffix in ("", "-wal", "-shm"):
+            p = path.with_name(path.name + suffix)
+            if p.exists():
+                assert stat.S_IMODE(p.stat().st_mode) == 0o600, suffix
+    finally:
+        db.close()

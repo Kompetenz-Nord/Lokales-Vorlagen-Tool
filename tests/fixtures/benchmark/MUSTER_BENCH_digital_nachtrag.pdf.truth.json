@@ -1,0 +1,16 @@
+{
+  "contract.changes": "Erhöhung des Beitrags (MUSTER)",
+  "contract.number": "4471203-5",
+  "insured.city": "Beispielstadt",
+  "insured.first_name": "Erika",
+  "insured.house_number": "4",
+  "insured.last_name": "Musterfrau",
+  "insured.postal_code": "54321",
+  "insured.street": "Am Beispielpark",
+  "insurer.name": "Beispiel Lebensversicherung AG",
+  "policyholder.first_name": "Erika",
+  "policyholder.name": "Musterfrau",
+  "premium.amount": "95.00",
+  "premium.currency": "EUR",
+  "premium.frequency": "monthly"
+}

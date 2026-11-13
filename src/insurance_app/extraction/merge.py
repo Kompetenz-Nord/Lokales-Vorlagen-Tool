@@ -31,10 +31,10 @@ from insurance_app.core.models import (
     Severity,
     ValidationMessage,
 )
-from insurance_app.core.textutil import format_date_de
+from insurance_app.core.textutil import fold, format_date_de
 
 from .extractor import ExtractionResult, SourceDocInfo
-from .normalize import NOTE_UNREADABLE, compact_key, is_placeholder
+from .normalize import NOTE_UNREADABLE, compact_key, is_placeholder, is_reference
 
 __all__ = [
     "MIN_EXTRACTED_CONFIDENCE",
@@ -54,6 +54,11 @@ NOTE_CONFLICT = "Die Quellen nennen unterschiedliche Werte – bitte den richtig
 NOTE_UNCLEAR_LOW = "Erkennung unsicher – bitte mit der Quelle vergleichen."
 NOTE_ONLY_UNREADABLE = f"{NOTE_UNREADABLE} – bitte prüfen."
 NOTE_EMPTY_IN_SOURCE = "In der Quelle ist für dieses Feld kein Wert eingetragen."
+NOTE_REFERENCE = (
+    "Die Quelle nennt keinen eigenen Wert, sondern verweist auf eine andere Angabe "
+    "(z. B. „wie Versicherungsnehmer“). Bitte den Wert selbst eintragen."
+)
+NOTE_INSURER_IBAN = "Eine IBAN entspricht der Bankverbindung des Versicherers und wurde nicht übernommen."
 
 _KEEP_STATUSES = (FieldStatus.CONFIRMED, FieldStatus.MANUAL)
 
@@ -73,9 +78,17 @@ class MergeOutcome(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+_CN_ALPHA_PREFIX = re.compile(r"^[A-Z]{1,4}(?=\d+$)")
+
+
 def contract_number_key(number: str) -> str:
-    """Vergleichsschlüssel einer Vertragsnummer (nur Buchstaben/Ziffern, groß)."""
-    return re.sub(r"[^A-Z0-9]", "", number.upper())
+    """Vergleichsschlüssel einer Vertragsnummer (nur Buchstaben/Ziffern, groß).
+
+    Ein kurzes Buchstaben-Präfix vor einer reinen Ziffernfolge (``LV 1234567``)
+    zählt nicht: „LV 1234567“ und „1234567“ sind dieselbe Nummer.
+    """
+    key = re.sub(r"[^A-Z0-9]", "", number.upper())
+    return _CN_ALPHA_PREFIX.sub("", key)
 
 
 def contract_numbers_by_document(
@@ -129,10 +142,42 @@ def group_documents(results: Sequence[tuple[SourceDocInfo, ExtractionResult]]) -
 # ---------------------------------------------------------------------------
 
 
+_STREET_ABBR = re.compile(r"str(?:asse\b|\.|\b)")
+_INSURER_FORM_TOKENS = {
+    "ag",
+    "se",
+    "ag.",
+    "a.g.",
+    "vvag",
+    "kgaa",
+    "gmbh",
+    "versicherung",
+    "versicherungen",
+    "versicherungs-ag",
+    "lebensversicherung",
+    "lebensversicherungs-ag",
+}
+
+
+def _street_key(normalized: str) -> str:
+    """„Musterstr. 12“ und „Musterstraße 12“ vergleichen gleich."""
+    return compact_key(_STREET_ABBR.sub("strasse", fold(normalized)))
+
+
+def _insurer_key(normalized: str) -> str:
+    """„Swiss Life AG“ und „Swiss Life“ vergleichen gleich (Rechtsform/Versicherungswort zählt nicht)."""
+    tokens = [t for t in fold(normalized).split(" ") if t.strip(",;()") not in _INSURER_FORM_TOKENS]
+    return compact_key(" ".join(tokens))
+
+
 def _cmp_key(key: str, normalized: str) -> str:
     fdef = FIELD_REGISTRY.get(key)
     if fdef is None:
         return normalized
+    if key.endswith(".street"):
+        return _street_key(normalized) or compact_key(normalized) or normalized
+    if key == "insurer.name":
+        return _insurer_key(normalized) or compact_key(normalized) or normalized
     if fdef.dtype in (FieldType.TEXT, FieldType.NAME, FieldType.COUNTRY):
         return compact_key(normalized) or normalized
     if fdef.dtype == FieldType.CONTRACT_NUMBER:
@@ -158,7 +203,37 @@ def _placeholder_note(evidence: list[Evidence]) -> str | None:
                 tail = " ".join(words[-n:])
                 if tail.strip() and is_placeholder(tail):
                     return f"Quelle nennt den Wert als '{tail}'."
+        for n in (3, 2, 1):
+            if len(words) > n and is_reference(" ".join(words[-n:])):
+                return NOTE_REFERENCE
     return NOTE_EMPTY_IN_SOURCE
+
+
+def _pseudo_candidate(old: FieldValue) -> Candidate | None:
+    """Der „bisher bestätigte Wert“ eines offenen Konflikts (oder ``None``)."""
+    return next(
+        (
+            c
+            for c in old.candidates
+            if c.evidence.file_name == CONFIRMED_LABEL and c.evidence.method == ExtractionMethod.MANUAL
+        ),
+        None,
+    )
+
+
+def _confirmed_conflict(
+    key: str, pseudo: Candidate, cands: list[Candidate], doc_numbers: dict[str, set[str]]
+) -> FieldValue:
+    """Konflikt mit dem bisher bestätigten Wert als erster Auswahlmöglichkeit."""
+    idx, hint = _suggestion(key, cands, doc_numbers)
+    note = NOTE_CONFIRMED_DIFFERS if hint is None else f"{NOTE_CONFIRMED_DIFFERS} {hint}"
+    return FieldValue(
+        key=key,
+        status=FieldStatus.CONFLICT,
+        candidates=[pseudo, *cands],
+        note=note,
+        suggestion_index=None if idx is None else idx + 1,
+    )
 
 
 def _from_best(key: str, best: Candidate, cands: list[Candidate], status: FieldStatus, note: str | None):
@@ -226,6 +301,13 @@ def _merge_field(
     if old is not None and old.status == FieldStatus.NOT_APPLICABLE:
         return old
 
+    if old is not None and old.status == FieldStatus.CONFLICT:
+        # Offener Konflikt gegen einen bestätigten/manuellen Wert: Dieser Wert darf bei
+        # keiner erneuten Zusammenführung verloren gehen, bis der Nutzer entscheidet.
+        pseudo = _pseudo_candidate(old)
+        if pseudo is not None:
+            return _confirmed_conflict(key, pseudo, cands, doc_numbers)
+
     if old is not None and old.status in _KEEP_STATUSES:
         if not cands:
             return old
@@ -254,16 +336,7 @@ def _merge_field(
             ),
             note="Bisher bestätigter Wert",
         )
-        listed = [pseudo, *cands]
-        idx, hint = _suggestion(key, cands, doc_numbers)
-        note = NOTE_CONFIRMED_DIFFERS if hint is None else f"{NOTE_CONFIRMED_DIFFERS} {hint}"
-        return FieldValue(
-            key=key,
-            status=FieldStatus.CONFLICT,
-            candidates=listed,
-            note=note,
-            suggestion_index=None if idx is None else idx + 1,
-        )
+        return _confirmed_conflict(key, pseudo, cands, doc_numbers)
 
     if not cands:
         return FieldValue(key=key, status=FieldStatus.MISSING, note=_placeholder_note(placeholders))
@@ -384,6 +457,22 @@ def merge_candidates(
             placeholders.setdefault(key, []).extend(evs)
 
     warnings: list[ValidationMessage] = []
+    # Bankverbindung des Versicherers aus irgendeinem Dokument ist nie die des Kunden
+    insurer_ibans = {iban for _info, res in results for iban in res.insurer_ibans}
+    if insurer_ibans and "bank.iban" in by_field:
+        kept = [c for c in by_field["bank.iban"] if c.normalized not in insurer_ibans]
+        if len(kept) != len(by_field["bank.iban"]):
+            warnings.append(
+                ValidationMessage(
+                    severity=Severity.INFO,
+                    code="INSURER_IBAN_IGNORED",
+                    message=NOTE_INSURER_IBAN,
+                    field_key="bank.iban",
+                )
+            )
+        by_field["bank.iban"] = kept
+        if not kept:
+            del by_field["bank.iban"]
     doc_numbers = contract_numbers_by_document(results)
     distinct_numbers = set().union(*doc_numbers.values()) if doc_numbers else set()
     if len(distinct_numbers) > 1:

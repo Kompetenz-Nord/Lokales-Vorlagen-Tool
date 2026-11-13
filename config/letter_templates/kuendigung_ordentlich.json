@@ -167,8 +167,8 @@
       "conditions": []
     },
     {
-      "text": "Bei Lebens- und Rentenversicherungen wird bei Kündigung der Rückkaufswert fällig; er kann unter den eingezahlten Beiträgen liegen. Alternativen (z. B. Beitragsfreistellung) vorher besprechen.",
-      "source": "§ 169 VVG",
+      "text": "Hat der Vertrag einen Rückkaufswert (z. B. kapitalbildende Lebens- oder Rentenversicherung), wird er bei Kündigung ausgezahlt; er kann unter den eingezahlten Beiträgen liegen. Bei manchen Vertragsarten ist eine Auszahlung ausgeschlossen, z. B. bei der Basisrente (Rürup-Rente, nur Beitragsfreistellung möglich) und teilweise in der betrieblichen Altersversorgung. Alternativen (z. B. Beitragsfreistellung) vorher besprechen.",
+      "source": "§ 169 VVG, § 168 Abs. 3 VVG, § 2 Abs. 2 BetrAVG",
       "severity": "WARNING",
       "conditions": []
     }

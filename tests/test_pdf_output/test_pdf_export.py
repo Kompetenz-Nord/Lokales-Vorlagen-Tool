@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import stat
 from datetime import date
 
 import pytest
@@ -169,3 +171,47 @@ def test_logs_contain_no_personal_values(tmp_path, caplog):
     assert "Export abgeschlossen" in text and "Vorlage befüllt" in text
     for value in PERSONAL_VALUES:
         assert value not in text
+
+
+# ---------------------------------------------------------------------------
+# PDF-8: exportierte PDFs nur für den eigenen Benutzer lesbar
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX-Dateirechte")
+def test_pdf_8_exported_pdf_is_private_and_user_dir_unchanged(tmp_path, filled):
+    t, work, qa = filled
+    user_dir = tmp_path / "eigener_ordner"
+    user_dir.mkdir(mode=0o755)
+    os.chmod(user_dir, 0o755)
+    old = os.umask(0o022)
+    try:
+        os.chmod(work, 0o644)
+        result = Exporter(user_dir, tmp_path / "export.jsonl").finalize(CASE_ID, t, work, qa, flattened=False)
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE(result.path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(user_dir.stat().st_mode) == 0o755  # vom Anwender gewählter Ordner bleibt
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX-Dateirechte")
+def test_pdf_8_default_export_dir_is_private_and_cross_device_copy(tmp_path, filled, monkeypatch):
+    t, work, qa = filled
+    real_replace = os.replace
+
+    def no_rename(src, dst):  # simuliert anderes Laufwerk für die erste Umbenennung
+        if str(src) == str(work):
+            raise OSError("anderes Laufwerk")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "replace", no_rename)
+    old = os.umask(0o022)
+    try:
+        exporter = Exporter(tmp_path / "exports", tmp_path / "export.jsonl", private_dir=True)
+        result = exporter.finalize(CASE_ID, t, work, qa, flattened=False)
+    finally:
+        os.umask(old)
+    assert stat.S_IMODE((tmp_path / "exports").stat().st_mode) == 0o700
+    assert stat.S_IMODE(result.path.stat().st_mode) == 0o600
+    assert not work.exists() and not list((tmp_path / "exports").glob("*.part"))
+    assert sha256(result.path) == qa.filled_sha256

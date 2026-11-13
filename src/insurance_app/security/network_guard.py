@@ -8,8 +8,12 @@ Nach :func:`install_network_guard` sind nur noch Verbindungen erlaubt zu
 
 Alles andere löst sofort – vor jedem Paket und ohne DNS-Abfrage – einen
 :class:`NetworkBlockedError` aus. Geprüft werden ``socket.socket.connect``,
-``connect_ex``, ``sendto``/``sendmsg`` (UDP), ``socket.create_connection`` und die
-Namensauflösung (``getaddrinfo``, ``gethostbyname`` …).
+``connect_ex``, ``sendto``/``sendmsg`` (UDP), ``socket.create_connection``, die
+Namensauflösung (``getaddrinfo``, ``gethostbyname`` …) und die Rückwärtsauflösung
+(``gethostbyaddr``, ``getnameinfo`` und damit ``getfqdn``). Rückwärtsauflösungen sind
+nur für Loopback-Adressen erlaubt – auch eine numerische Adresse würde sonst eine
+DNS-Anfrage (PTR) auslösen. ``getnameinfo`` mit ``NI_NUMERICHOST`` (reine
+Formatierung ohne Namensauflösung) bleibt erlaubt.
 
 Grenzen: Externe Programme (Subprozesse) und native Bibliotheken mit eigenem
 Netzwerkcode werden nicht erfasst. Die App startet keine solchen Netzwerkzugriffe.
@@ -220,6 +224,26 @@ def _host_allowed_for_lookup(host: object) -> bool:
     return is_loopback_host(host) or _is_numeric_host(host)
 
 
+def _host_allowed_for_reverse_lookup(host: object) -> bool:
+    """Rückwärtsauflösung (Adresse -> Name) nur für Loopback: jede andere Adresse fragt DNS (PTR)."""
+    return is_loopback_host(host)
+
+
+def _guarded_gethostbyaddr(host: Any, *args: Any, **kwargs: Any) -> Any:
+    if not network_allowed() and not _host_allowed_for_reverse_lookup(host):
+        raise _block("gethostbyaddr")
+    return _originals["gethostbyaddr"](host, *args, **kwargs)
+
+
+def _guarded_getnameinfo(sockaddr: Any, flags: Any, *args: Any, **kwargs: Any) -> Any:
+    if not network_allowed():
+        numeric = isinstance(flags, int) and bool(flags & socket.NI_NUMERICHOST)
+        host = sockaddr[0] if isinstance(sockaddr, tuple) and sockaddr else None
+        if not numeric and not _host_allowed_for_reverse_lookup(host):
+            raise _block("getnameinfo")
+    return _originals["getnameinfo"](sockaddr, flags, *args, **kwargs)
+
+
 def _guarded_create_connection(address: Any, *args: Any, **kwargs: Any) -> socket.socket:
     if not network_allowed():
         host = address[0] if isinstance(address, tuple) and address else None
@@ -259,7 +283,8 @@ _MODULE_FUNCTIONS: dict[str, Callable[..., Any]] = {
     "getaddrinfo": _guarded_getaddrinfo,
     "gethostbyname": _lookup_guard("gethostbyname"),
     "gethostbyname_ex": _lookup_guard("gethostbyname_ex"),
-    "gethostbyaddr": _lookup_guard("gethostbyaddr"),
+    "gethostbyaddr": _guarded_gethostbyaddr,
+    "getnameinfo": _guarded_getnameinfo,
 }
 
 

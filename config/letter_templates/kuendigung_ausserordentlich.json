@@ -104,6 +104,11 @@
       "style": "paragraph"
     },
     {
+      "text": "Hilfsweise kündige ich den Vertrag ordentlich zum nächstmöglichen Zeitpunkt.",
+      "conditions": [],
+      "style": "paragraph"
+    },
+    {
       "text": "Bitte bestätigen Sie mir den Eingang dieser Kündigung sowie den Zeitpunkt, zu dem der Vertrag endet, schriftlich.",
       "conditions": [],
       "style": "paragraph"
@@ -222,9 +227,16 @@
           "equals": "claim"
         }
       ]
+    },
+    {
+      "text": "Der Brief enthält immer zusätzlich eine hilfsweise ordentliche Kündigung zum nächstmöglichen Zeitpunkt. Sie greift, falls das Sonderkündigungsrecht nicht besteht oder die Frist versäumt ist. Bei Lebens- und Rentenversicherungen vorher Rückkaufswert und Alternativen (z. B. Beitragsfreistellung) besprechen. In der privaten Krankenversicherung mit Versicherungspflicht wird eine Kündigung nur wirksam, wenn innerhalb von zwei Monaten eine lückenlose Anschlussversicherung nachgewiesen wird. Bitte im Einzelfall prüfen.",
+      "source": "§ 169 VVG, § 205 Abs. 6 VVG",
+      "severity": "INFO",
+      "conditions": []
     }
   ],
   "notes": [
-    "Die Rechtsgrundlage wird nur gedruckt, wenn der Anwender sie ausdrücklich einträgt."
+    "Die Rechtsgrundlage wird nur gedruckt, wenn der Anwender sie ausdrücklich einträgt.",
+    "Nach der außerordentlichen Kündigung folgt immer der Satz „Hilfsweise kündige ich den Vertrag ordentlich zum nächstmöglichen Zeitpunkt.“ – er sichert ab, falls das Sonderkündigungsrecht nicht besteht."
   ]
 }

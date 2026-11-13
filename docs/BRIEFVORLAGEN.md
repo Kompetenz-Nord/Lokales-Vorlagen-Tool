@@ -41,7 +41,7 @@ DIN 5008 ist die deutsche Norm für den Aufbau von Geschäftsbriefen (Ränder, A
 | Straße, PLZ, Ort des Versicherungsnehmers | `policyholder.street`, `policyholder.postal_code`, `policyholder.city` | Pflicht |
 | Hausnummer des Versicherungsnehmers | `policyholder.house_number` | optional |
 | Versicherungsnummer | `contract.number` | Pflicht |
-| Datum des Schreibens | `order.letter_date` | Pflicht. Die App schlägt das heutige Datum vor (Verlauf: „Heutiges Datum als Briefdatum vorgeschlagen – bitte prüfen“). |
+| Datum des Schreibens | `order.letter_date` | Pflicht. Die App schlägt das heutige Datum vor und führt einen unveränderten Vorschlag auf das jeweils aktuelle Datum nach. Die Checkliste erinnert: „Vorschlag übernommen – bitte prüfen: Datum des Schreibens“, bis Sie das Datum selbst eintragen. |
 | Empfänger: Versicherer/Gesellschaft, Straße oder Postfach, PLZ, Ort | `order.recipient_company`, `order.recipient_street`, `order.recipient_postal_code`, `order.recipient_city` | Pflicht |
 | Empfänger: Abteilung, Hausnummer | `order.recipient_department`, `order.recipient_house_number` | optional |
 | Telefon, E-Mail des Absenders | `order.sender_phone`, `order.sender_email` | optional |
@@ -54,7 +54,7 @@ DIN 5008 ist die deutsche Norm für den Aufbau von Geschäftsbriefen (Ränder, A
 - **Rechtlich relevante Auswahlen** (z. B. Beendigungszeitpunkt, SEPA widerrufen ja/nein) haben **keine Vorauswahl**. Ohne Entscheidung meldet die Checkliste „Bitte ausdrücklich entscheiden: …“.
 - Das gilt auch für rechtlich relevante **optionale** Angaben, von denen ein Absatz abhängt (z. B. „Befristet bis“). Entweder einen Wert eintragen oder bewusst „nicht relevant“ wählen.
 - Knopf **„Versicherer als Empfänger übernehmen“**: übernimmt den bestätigten Versicherernamen als Empfänger. Die Anschrift ergänzen und prüfen Sie selbst.
-- Jede Vorlage außer Nr. 7 verlangt vor dem Export eine **Pflicht-Bestätigung** (siehe je Brief).
+- Jede Vorlage außer Nr. 7 verlangt vor dem Export eine **Pflicht-Bestätigung** (siehe je Brief). Wechseln Sie die Vorlage, setzt die App diese Bestätigung zurück („Vorlage gewechselt – Bestätigung erneut erforderlich“).
 - Die Unterschrift erfolgt handschriftlich. Der Platz dafür bleibt frei.
 
 **Plausibilitätsprüfungen** (Warnung = Hinweis; Fehler = Export gesperrt):
@@ -90,15 +90,20 @@ DIN 5008 ist die deutsche Norm für den Aufbau von Geschäftsbriefen (Ränder, A
 
 | Textbaustein | erscheint, wenn … |
 |---|---|
-| „hiermit kündige ich den oben genannten Versicherungsvertrag fristgerecht zum ‹Datum›, hilfsweise zum nächstmöglichen Zeitpunkt.“ bzw. „… fristgerecht zum nächstmöglichen Zeitpunkt.“ | immer (Variante je Beendigungszeitpunkt) |
+| „hiermit kündige ich den oben genannten Versicherungsvertrag fristgerecht ‹Zeitpunkt›.“ | „Beendigungszeitpunkt“ = zum angegebenen Datum (hilfsweise zum nächstmöglichen Zeitpunkt) oder zum nächstmöglichen Zeitpunkt |
 | „Bitte bestätigen Sie mir den Eingang dieser Kündigung sowie den Zeitpunkt, zu dem der Vertrag endet, schriftlich.“ | immer |
-| „Das Ihnen erteilte SEPA-Lastschriftmandat widerrufe ich mit Wirkung zum Vertragsende.“ | SEPA widerrufen = ja |
-| „Ein etwaiges Guthaben bzw. einen Rückkaufswert überweisen Sie bitte auf folgendes Konto:“ + Kontoinhaber, IBAN, ggf. Kreditinstitut | Auszahlung = ja |
+| „Das Ihnen erteilte SEPA-Lastschriftmandat widerrufe ich mit Wirkung zum Vertragsende.“ | „SEPA-Lastschriftmandat zum Vertragsende widerrufen“ = ja |
+| „Ein etwaiges Guthaben bzw. einen Rückkaufswert überweisen Sie bitte auf folgendes Konto:“ | „Auszahlung eines Guthabens auf das angegebene Konto erbitten“ = ja |
+| • „Kontoinhaber: ‹Kontoinhaber›“ | „Auszahlung eines Guthabens auf das angegebene Konto erbitten“ = ja |
+| • „IBAN: ‹IBAN›“ | „Auszahlung eines Guthabens auf das angegebene Konto erbitten“ = ja |
+| • „Kreditinstitut: ‹Kreditinstitut›“ | „Auszahlung eines Guthabens auf das angegebene Konto erbitten“ = ja und „Geldinstitut (für Beitragszahlung)“ ausgefüllt |
+
+‹Zeitpunkt› ist je nach Auswahl „zum ‹Datum›, hilfsweise zum nächstmöglichen Zeitpunkt“ oder „zum nächstmöglichen Zeitpunkt“. Platzhalter in ‹spitzen Klammern› stehen für Ihre Eingaben.
 
 **Hinweise (prüfbedürftig, keine Rechtsberatung):**
 
-- Die Erklärung wird erst mit **Zugang** beim Versicherer wirksam. Versandweg mit Zugangsnachweis wählen (z. B. Einschreiben, Fax mit Sendebericht), Kopie aufbewahren. Quelle: § 130 Abs. 1 BGB.
-- Warnung: Bei Lebens- und Rentenversicherungen wird bei Kündigung der Rückkaufswert fällig. Er kann unter den eingezahlten Beiträgen liegen. Alternativen (z. B. Beitragsfreistellung) vorher besprechen. Quelle: § 169 VVG.
+- Die Erklärung wird erst mit Zugang beim Versicherer wirksam. Bitte einen Versandweg mit Zugangsnachweis wählen (z. B. Einschreiben, Fax mit Sendebericht) und eine Kopie aufbewahren. Quelle: § 130 Abs. 1 BGB.
+- Warnung: Hat der Vertrag einen Rückkaufswert (z. B. kapitalbildende Lebens- oder Rentenversicherung), wird er bei Kündigung ausgezahlt; er kann unter den eingezahlten Beiträgen liegen. Bei manchen Vertragsarten ist eine Auszahlung ausgeschlossen, z. B. bei der Basisrente (Rürup-Rente, nur Beitragsfreistellung möglich) und teilweise in der betrieblichen Altersversorgung. Alternativen (z. B. Beitragsfreistellung) vorher besprechen. Quelle: § 169 VVG, § 168 Abs. 3 VVG, § 2 Abs. 2 BetrAVG.
 
 Der Text nennt bewusst keine Kündigungsfrist. „Hilfsweise zum nächstmöglichen Zeitpunkt“ sichert ab, falls das gewünschte Datum nicht erreichbar ist.
 
@@ -119,19 +124,26 @@ Der Text nennt bewusst keine Kündigungsfrist. „Hilfsweise zum nächstmöglich
 
 | Textbaustein | erscheint, wenn … |
 |---|---|
-| „mit Schreiben vom ‹Datum› haben Sie mir eine Beitragserhöhung für den oben genannten Vertrag mitgeteilt. Aus diesem Anlass kündige ich den Vertrag hiermit außerordentlich ‹Zeitpunkt›.“ | Anlass = Beitragserhöhung |
-| „im Zusammenhang mit dem Schadenfall vom ‹Datum› kündige ich den oben genannten Versicherungsvertrag hiermit außerordentlich ‹Zeitpunkt›.“ | Anlass = Schadenfall |
-| „hiermit kündige ich den oben genannten Versicherungsvertrag außerordentlich ‹Zeitpunkt›. Anlass: ‹Grund›“ | Anlass = anderer Anlass |
-| „Ich stütze die Kündigung auf ‹Rechtsgrundlage›.“ | Rechtsgrundlage eingetragen |
-| Eingangsbestätigung, SEPA-Widerruf, Konto | wie bei Nr. 3 |
+| „mit Schreiben vom ‹Datum› haben Sie mir eine Beitragserhöhung für den oben genannten Vertrag mitgeteilt. Aus diesem Anlass kündige ich den Vertrag hiermit außerordentlich ‹Zeitpunkt›.“ | „Anlass der außerordentlichen Kündigung“ = Beitragserhöhung |
+| „im Zusammenhang mit dem Schadenfall vom ‹Datum› kündige ich den oben genannten Versicherungsvertrag hiermit außerordentlich ‹Zeitpunkt›.“ | „Anlass der außerordentlichen Kündigung“ = Schadenfall |
+| „hiermit kündige ich den oben genannten Versicherungsvertrag außerordentlich ‹Zeitpunkt›. Anlass: ‹Grund›“ | „Anlass der außerordentlichen Kündigung“ = anderer Anlass |
+| „Ich stütze die Kündigung auf ‹Rechtsgrundlage›.“ | „Rechtsgrundlage (optional, nur nach Prüfung angeben)“ ausgefüllt |
+| „Hilfsweise kündige ich den Vertrag ordentlich zum nächstmöglichen Zeitpunkt.“ | immer |
+| „Bitte bestätigen Sie mir den Eingang dieser Kündigung sowie den Zeitpunkt, zu dem der Vertrag endet, schriftlich.“ | immer |
+| „Das Ihnen erteilte SEPA-Lastschriftmandat widerrufe ich mit Wirkung zum Vertragsende.“ | „SEPA-Lastschriftmandat zum Vertragsende widerrufen“ = ja |
+| „Ein etwaiges Guthaben bzw. einen Rückkaufswert überweisen Sie bitte auf folgendes Konto:“ | „Auszahlung eines Guthabens auf das angegebene Konto erbitten“ = ja |
+| • „Kontoinhaber: ‹Kontoinhaber›“ | „Auszahlung eines Guthabens auf das angegebene Konto erbitten“ = ja |
+| • „IBAN: ‹IBAN›“ | „Auszahlung eines Guthabens auf das angegebene Konto erbitten“ = ja |
+| • „Kreditinstitut: ‹Kreditinstitut›“ | „Auszahlung eines Guthabens auf das angegebene Konto erbitten“ = ja und „Geldinstitut (für Beitragszahlung)“ ausgefüllt |
 
-‹Zeitpunkt› ist je nach Auswahl: „zum ‹Datum›, hilfsweise zum nächstmöglichen Zeitpunkt“, „zum nächstmöglichen Zeitpunkt“ oder „zu dem Zeitpunkt, zu dem die Beitragserhöhung wirksam werden soll“.
+‹Zeitpunkt› ist je nach Auswahl: „zum ‹Datum›, hilfsweise zum nächstmöglichen Zeitpunkt“, „zum nächstmöglichen Zeitpunkt“ oder „zu dem Zeitpunkt, zu dem die Beitragserhöhung wirksam werden soll“. Der Satz „Hilfsweise kündige ich den Vertrag ordentlich zum nächstmöglichen Zeitpunkt.“ steht immer im Brief. Er sichert ab, falls das Sonderkündigungsrecht nicht besteht.
 
 **Hinweise (prüfbedürftig, keine Rechtsberatung):**
 
-- Zugang beim Versicherer, Versand mit Nachweis. Quelle: § 130 Abs. 1 BGB.
-- Bei Beitragserhöhung aufgrund einer Anpassungsklausel: Kündigungsrecht innerhalb eines Monats nach Zugang der Mitteilung, frühestens zum Wirksamwerden der Erhöhung. In der privaten Krankenversicherung gilt eine eigene Regel. Quellen: § 40 VVG, § 205 Abs. 4 VVG.
-- Nach einem Schadenfall: z. B. in der Sachversicherung und der Haftpflichtversicherung Kündigungsrecht mit Monatsfrist; der Fristbeginn ist unterschiedlich geregelt. Quellen: § 92 VVG, § 111 VVG.
+- Die Erklärung wird erst mit Zugang beim Versicherer wirksam. Bitte einen Versandweg mit Zugangsnachweis wählen (z. B. Einschreiben, Fax mit Sendebericht) und eine Kopie aufbewahren. Quelle: § 130 Abs. 1 BGB.
+- Bei einer Beitragserhöhung aufgrund einer Anpassungsklausel sieht § 40 VVG ein Kündigungsrecht innerhalb eines Monats nach Zugang der Mitteilung vor, frühestens zum Wirksamwerden der Erhöhung. In der privaten Krankenversicherung gilt § 205 Abs. 4 VVG mit eigener Frist. Bitte im Einzelfall prüfen. Quelle: § 40 VVG, § 205 Abs. 4 VVG. *(nur wenn „Anlass der außerordentlichen Kündigung“ = Beitragserhöhung)*
+- Nach einem Schadenfall sehen z. B. § 92 VVG (Sachversicherung) und § 111 VVG (Haftpflichtversicherung) ein Kündigungsrecht mit Monatsfrist vor; der Fristbeginn ist unterschiedlich geregelt. Bitte im Einzelfall prüfen. Quelle: § 92 VVG, § 111 VVG. *(nur wenn „Anlass der außerordentlichen Kündigung“ = Schadenfall)*
+- Der Brief enthält immer zusätzlich eine hilfsweise ordentliche Kündigung zum nächstmöglichen Zeitpunkt. Sie greift, falls das Sonderkündigungsrecht nicht besteht oder die Frist versäumt ist. Bei Lebens- und Rentenversicherungen vorher Rückkaufswert und Alternativen (z. B. Beitragsfreistellung) besprechen. In der privaten Krankenversicherung mit Versicherungspflicht wird eine Kündigung nur wirksam, wenn innerhalb von zwei Monaten eine lückenlose Anschlussversicherung nachgewiesen wird. Bitte im Einzelfall prüfen. Quelle: § 169 VVG, § 205 Abs. 6 VVG.
 
 ### Nr. 5 – Befristete Beitragsfreistellung / Beitragsreduzierung
 
@@ -149,18 +161,18 @@ Der Text nennt bewusst keine Kündigungsfrist. „Hilfsweise zum nächstmöglich
 
 | Textbaustein | erscheint, wenn … |
 |---|---|
-| „für den oben genannten Vertrag beantrage ich eine befristete Beitragsfreistellung vom ‹Beginn› bis zum ‹Ende›.“ | Freistellung mit Ende |
-| „für den oben genannten Vertrag beantrage ich eine Beitragsfreistellung ab dem ‹Beginn›.“ | Freistellung ohne Ende |
-| „für den oben genannten Vertrag beantrage ich, den Beitrag vom ‹Beginn› bis zum ‹Ende› auf ‹Betrag› ‹Zahlweise› zu reduzieren.“ | Reduzierung mit Ende |
-| „für den oben genannten Vertrag beantrage ich, den Beitrag ab dem ‹Beginn› auf ‹Betrag› ‹Zahlweise› zu reduzieren.“ | Reduzierung ohne Ende |
-| „Nach Ablauf dieses Zeitraums bitte ich darum, die Beitragszahlung in Höhe von ‹Betrag› ‹Zahlweise› wieder aufzunehmen.“ | Ende und Folgebeitrag eingetragen |
-| „Das bestehende SEPA-Lastschriftmandat soll unverändert bestehen bleiben.“ | SEPA bleibt = ja |
+| „für den oben genannten Vertrag beantrage ich eine befristete Beitragsfreistellung vom ‹Beginn› bis zum ‹Ende›.“ | „Art der Beitragsänderung“ = Beitragsfreistellung und „Befristet bis (Datum, optional)“ ausgefüllt |
+| „für den oben genannten Vertrag beantrage ich eine Beitragsfreistellung ab dem ‹Beginn›.“ | „Art der Beitragsänderung“ = Beitragsfreistellung und „Befristet bis (Datum, optional)“ leer bzw. nicht relevant |
+| „für den oben genannten Vertrag beantrage ich, den Beitrag vom ‹Beginn› bis zum ‹Ende› auf ‹Betrag› ‹Zahlweise› zu reduzieren.“ | „Art der Beitragsänderung“ = Beitragsreduzierung und „Befristet bis (Datum, optional)“ ausgefüllt |
+| „für den oben genannten Vertrag beantrage ich, den Beitrag ab dem ‹Beginn› auf ‹Betrag› ‹Zahlweise› zu reduzieren.“ | „Art der Beitragsänderung“ = Beitragsreduzierung und „Befristet bis (Datum, optional)“ leer bzw. nicht relevant |
+| „Nach Ablauf dieses Zeitraums bitte ich darum, die Beitragszahlung in Höhe von ‹Betrag› ‹Zahlweise› wieder aufzunehmen.“ | „Befristet bis (Datum, optional)“ ausgefüllt und „Beitrag nach Ende der Befristung (Euro, optional)“ ausgefüllt |
+| „Das bestehende SEPA-Lastschriftmandat soll unverändert bestehen bleiben.“ | „Bestehendes SEPA-Lastschriftmandat soll bestehen bleiben“ = ja |
 | „Bitte bestätigen Sie mir die Änderung schriftlich und teilen Sie mir mit, wie sie sich auf die Leistungen und den Versicherungsschutz meines Vertrags auswirkt.“ | immer |
 
 **Hinweise (prüfbedürftig, keine Rechtsberatung):**
 
-- Ob eine Freistellung oder Reduzierung möglich ist, regeln die Vertragsbedingungen (z. B. Mindestbeitrag, Mindestvertragsguthaben). Bei Lebensversicherungen siehe auch die prämienfreie Versicherung. Quellen: Vertragsbedingungen, § 165 VVG.
-- Warnung bei Freistellung: Bei Berufsunfähigkeits- oder Risikoversicherungen kann eine Freistellung den Versicherungsschutz mindern oder entfallen lassen. Bitte vorher klären.
+- Ob eine Beitragsfreistellung oder -reduzierung möglich ist, regeln die Vertragsbedingungen (z. B. Mindestbeitrag, Mindestvertragsguthaben). Bei Lebensversicherungen siehe auch § 165 VVG (prämienfreie Versicherung). Quelle: Vertragsbedingungen, § 165 VVG.
+- Warnung: Bei Berufsunfähigkeits- oder Risikoversicherungen kann eine Freistellung den Versicherungsschutz mindern oder entfallen lassen. Bitte vorher klären. *(nur wenn „Art der Beitragsänderung“ = Beitragsfreistellung)*
 
 ### Nr. 6 – Beitragserhöhung / Vertragsanpassung
 
@@ -176,12 +188,14 @@ Der Text nennt bewusst keine Kündigungsfrist. „Hilfsweise zum nächstmöglich
 
 | Textbaustein | erscheint, wenn … |
 |---|---|
-| „für den oben genannten Vertrag beantrage ich, den Beitrag zum ‹Datum› um ‹Betrag› ‹Zahlweise› zu erhöhen.“ | immer |
-| „Der neue Gesamtbeitrag beträgt damit ‹Betrag› ‹Zahlweise›.“ | Gesamtbeitrag eingetragen |
-| „Das bestehende SEPA-Lastschriftmandat soll für den neuen Beitrag unverändert bestehen bleiben.“ | SEPA bleibt = ja |
+| „für den oben genannten Vertrag beantrage ich, den Beitrag zum ‹Beginn› um ‹Betrag› ‹Zahlweise› zu erhöhen.“ | immer |
+| „Der neue Gesamtbeitrag beträgt damit ‹Betrag› ‹Zahlweise›.“ | „Neuer Beitrag (Euro)“ ausgefüllt |
+| „Das bestehende SEPA-Lastschriftmandat soll für den neuen Beitrag unverändert bestehen bleiben.“ | „Bestehendes SEPA-Lastschriftmandat soll bestehen bleiben“ = ja |
 | „Bitte bestätigen Sie mir die Vertragsänderung schriftlich und senden Sie mir einen Nachtrag zum Versicherungsschein zu. Sollten für die Erhöhung weitere Angaben oder Formulare erforderlich sein (z. B. Gesundheitsfragen), bitte ich um Zusendung.“ | immer |
 
-**Hinweis (prüfbedürftig, keine Rechtsberatung):** Je nach Tarif kann eine Erhöhung eine erneute Risikoprüfung (z. B. Gesundheitsfragen) erfordern. Für den Erhöhungsteil können neue Wartezeiten oder Fristen gelten. Quelle: Vertragsbedingungen.
+**Hinweise (prüfbedürftig, keine Rechtsberatung):**
+
+- Je nach Tarif kann eine Erhöhung eine erneute Risikoprüfung (z. B. Gesundheitsfragen) erfordern; für den Erhöhungsteil können neue Wartezeiten oder Fristen gelten. Quelle: Vertragsbedingungen.
 
 ### Nr. 7 – Bestandsübertrag / Betreuerwechsel
 
@@ -189,7 +203,7 @@ Der Text nennt bewusst keine Kündigungsfrist. „Hilfsweise zum nächstmöglich
 
 | Eingabe | Pflicht? |
 |---|---|
-| Neue Betreuung: Gesellschaft | Pflicht. Vorschlag der Vorlage: „tecis Finanzdienstleistungen AG“ (als „Manuell eingetragen“ übernommen – bitte prüfen) |
+| Neue Betreuung: Gesellschaft | Pflicht. Vorschlag der Vorlage: „tecis Finanzdienstleistungen AG“ (markiert mit „Vorschlag der Vorlage – bitte prüfen“) |
 | Beraterin/Berater: Name, Straße, PLZ, Ort | Pflicht |
 | Hausnummer, Vermittlernummer | optional |
 | Vertragsänderungen dürfen auch über die neue Betreuung veranlasst werden (Vollmacht)? | ja/nein ausdrücklich wählen |
@@ -197,15 +211,19 @@ Der Text nennt bewusst keine Kündigungsfrist. „Hilfsweise zum nächstmöglich
 
 | Textbaustein | erscheint, wenn … |
 |---|---|
-| „hiermit bitte ich Sie, die Betreuung des oben genannten Vertrags auf die ‹Gesellschaft› zu übertragen. Meine neue Ansprechpartnerin bzw. mein neuer Ansprechpartner ist:“ + Name, Anschrift, ggf. Vermittlernummer | immer |
-| „Vertragsänderungen können künftig auch über die neue Betreuung veranlasst werden.“ | Vollmacht = ja |
-| „Ich bin damit einverstanden, dass Sie der neuen Betreuung die für die Betreuung meines Vertrags erforderlichen Vertragsdaten übermitteln.“ | Einverständnis = ja |
+| „hiermit bitte ich Sie, die Betreuung des oben genannten Vertrags auf die ‹Gesellschaft› zu übertragen. Meine neue Ansprechpartnerin bzw. mein neuer Ansprechpartner ist:“ | immer |
+| • „‹Name›“ | immer |
+| • „‹Straße› ‹Hausnummer›“ | immer |
+| • „‹PLZ› ‹Ort›“ | immer |
+| • „Vermittlernummer: ‹Vermittlernummer›“ | „Neue Betreuung: Vermittlernummer (optional)“ ausgefüllt |
+| „Vertragsänderungen können künftig auch über die neue Betreuung veranlasst werden.“ | „Vertragsänderungen dürfen auch über die neue Betreuung veranlasst werden (Vollmacht)“ = ja |
+| „Ich bin damit einverstanden, dass Sie der neuen Betreuung die für die Betreuung meines Vertrags erforderlichen Vertragsdaten übermitteln.“ | „Einverständnis: Vertragsdaten an die neue Betreuung übermitteln“ = ja |
 | „Bitte bestätigen Sie mir die Übertragung der Betreuung schriftlich.“ | immer |
 
 **Hinweise (prüfbedürftig, keine Rechtsberatung):**
 
-- Viele Versicherer verlangen zusätzlich eine Maklervollmacht oder ein eigenes Formular. Vorab beim Versicherer bzw. bei der neuen Betreuung klären.
-- Bei Lebens-, Kranken- und Unfallversicherungen unterliegen Vertragsdaten einer besonderen Schweigepflicht. Eine Weitergabe an die neue Betreuung erfordert eine Einwilligung der Kundin bzw. des Kunden. Quellen: § 203 Abs. 1 StGB, Art. 6 DSGVO.
+- Viele Versicherer verlangen für einen Betreuerwechsel zusätzlich eine Maklervollmacht oder ein eigenes Formular. Bitte vorab beim Versicherer bzw. bei der neuen Betreuung klären.
+- Bei Lebens-, Kranken- und Unfallversicherungen unterliegen Vertragsdaten einer besonderen Schweigepflicht; eine Weitergabe an die neue Betreuung erfordert eine Einwilligung der Kundin bzw. des Kunden. Quelle: § 203 Abs. 1 StGB, Art. 6 DSGVO.
 
 ### Nr. 8 – Widerruf (Antrag / Vertrag) und Rücknahme einer Kündigung
 
@@ -221,17 +239,20 @@ Der Text nennt bewusst keine Kündigungsfrist. „Hilfsweise zum nächstmöglich
 
 | Textbaustein | erscheint, wenn … |
 |---|---|
-| „hiermit widerrufe ich meinen Antrag vom ‹Datum› auf Abschluss des oben genannten Versicherungsvertrags.“ | Gegenstand = Antrag |
-| „hiermit widerrufe ich meine Vertragserklärung zum oben genannten Versicherungsvertrag.“ | Gegenstand = Vertrag |
-| „Bitte bestätigen Sie mir den Eingang dieses Widerrufs sowie die Rückabwicklung des Vertrags schriftlich.“ | Antrag oder Vertrag |
-| „Bereits gezahlte Beiträge erstatten Sie bitte, soweit sie mir zustehen, auf folgendes Konto:“ + Kontoinhaber, IBAN, ggf. Kreditinstitut | Antrag oder Vertrag und Erstattung = ja |
-| „meine Kündigung vom ‹Datum› zum oben genannten Vertrag nehme ich hiermit zurück. Ich bitte Sie, den Vertrag unverändert fortzuführen, und um eine schriftliche Bestätigung.“ | Gegenstand = Rücknahme einer Kündigung |
+| „hiermit widerrufe ich meinen Antrag vom ‹Datum› auf Abschluss des oben genannten Versicherungsvertrags.“ | „Gegenstand des Widerrufs“ = Antrag |
+| „hiermit widerrufe ich meine Vertragserklärung zum oben genannten Versicherungsvertrag.“ | „Gegenstand des Widerrufs“ = Versicherungsvertrag (Vertragserklärung) |
+| „Bitte bestätigen Sie mir den Eingang dieses Widerrufs sowie die Rückabwicklung des Vertrags schriftlich.“ | „Gegenstand des Widerrufs“ = Antrag oder Versicherungsvertrag (Vertragserklärung) |
+| „Bereits gezahlte Beiträge erstatten Sie bitte, soweit sie mir zustehen, auf folgendes Konto:“ | „Gegenstand des Widerrufs“ = Antrag oder Versicherungsvertrag (Vertragserklärung) und „Erstattung bereits gezahlter Beiträge auf das angegebene Konto erbitten“ = ja |
+| • „Kontoinhaber: ‹Kontoinhaber›“ | „Gegenstand des Widerrufs“ = Antrag oder Versicherungsvertrag (Vertragserklärung) und „Erstattung bereits gezahlter Beiträge auf das angegebene Konto erbitten“ = ja |
+| • „IBAN: ‹IBAN›“ | „Gegenstand des Widerrufs“ = Antrag oder Versicherungsvertrag (Vertragserklärung) und „Erstattung bereits gezahlter Beiträge auf das angegebene Konto erbitten“ = ja |
+| • „Kreditinstitut: ‹Kreditinstitut›“ | „Gegenstand des Widerrufs“ = Antrag oder Versicherungsvertrag (Vertragserklärung) und „Erstattung bereits gezahlter Beiträge auf das angegebene Konto erbitten“ = ja und „Geldinstitut (für Beitragszahlung)“ ausgefüllt |
+| „meine Kündigung vom ‹Datum› zum oben genannten Vertrag nehme ich hiermit zurück. Ich bitte Sie, den Vertrag unverändert fortzuführen, und um eine schriftliche Bestätigung.“ | „Gegenstand des Widerrufs“ = Rücknahme einer eigenen Kündigung |
 
 **Hinweise (prüfbedürftig, keine Rechtsberatung):**
 
-- Bei Antrag/Vertrag: Widerrufsfrist in der Regel 14 Tage, bei Lebensversicherungen 30 Tage. Sie beginnt erst, wenn Versicherungsschein, Vertragsbestimmungen, Informationen und Widerrufsbelehrung in Textform zugegangen sind. Textform genügt, eine Begründung ist nicht nötig; zur Fristwahrung genügt die rechtzeitige Absendung. Quellen: § 8 Abs. 1 und 2 VVG, § 152 Abs. 1 VVG.
-- Warnung bei Rücknahme einer Kündigung: Eine Kündigung wird mit Zugang wirksam. Sie kann nur widerrufen werden, wenn der Widerruf vorher oder gleichzeitig zugeht. Danach ist eine Fortführung nur mit Zustimmung des Versicherers möglich – der Brief ist deshalb als Bitte formuliert. Quelle: § 130 Abs. 1 Satz 2 BGB.
-- Zugang beim Versicherer, Versand mit Nachweis. Quelle: § 130 Abs. 1 BGB.
+- Widerrufsfrist in der Regel 14 Tage, bei Lebensversicherungen 30 Tage. Sie beginnt erst, wenn Versicherungsschein, Vertragsbestimmungen, Informationen und Widerrufsbelehrung in Textform zugegangen sind. Textform genügt, eine Begründung ist nicht nötig; zur Fristwahrung genügt die rechtzeitige Absendung. Quelle: § 8 Abs. 1 und 2 VVG, § 152 Abs. 1 VVG. *(nur wenn „Gegenstand des Widerrufs“ = Antrag oder Versicherungsvertrag (Vertragserklärung))*
+- Warnung: Eine Kündigung wird mit Zugang wirksam und kann nur widerrufen werden, wenn der Widerruf vorher oder gleichzeitig zugeht. Danach ist eine Fortführung nur mit Zustimmung des Versicherers möglich – der Brief ist deshalb als Bitte formuliert. Quelle: § 130 Abs. 1 Satz 2 BGB. *(nur wenn „Gegenstand des Widerrufs“ = Rücknahme einer eigenen Kündigung)*
+- Die Erklärung wird erst mit Zugang beim Versicherer wirksam. Bitte einen Versandweg mit Zugangsnachweis wählen (z. B. Einschreiben, Fax mit Sendebericht) und eine Kopie aufbewahren. Quelle: § 130 Abs. 1 BGB.
 
 ---
 
@@ -336,7 +357,7 @@ Hängt eine Bedingung an einem **rechtlich relevanten** Feld, verlangt die App d
 
 1. App schließen. Datei sichern (am besten über Git).
 2. Text ändern. Keine Personendaten in Texte oder `defaults` schreiben.
-3. **Version erhöhen:** `version` (z. B. `2027-01`) und die Endung von `template_id` (z. B. `brief_kuendigung_ordentlich_2027-01`).
+3. **Version erhöhen:** `version` (z. B. `2027-01`) und die Endung von `template_id` (z. B. `brief_kuendigung_ordentlich_2027-01`). Offene Vorgänge mit diesem Brief verlangen danach eine erneute Vorlagenwahl.
 4. Prüfen:
 
    ```bash
@@ -352,5 +373,6 @@ Hängt eine Bedingung an einem **rechtlich relevanten** Feld, verlangt die App d
 ### Versionierung
 
 - Bei der Vorlagenwahl speichert der Vorgang die Kennung und Version der Vorlage. Das Exportprotokoll vermerkt bei jedem Export Vorlagen-ID und Version.
-- Vorschau und Export verwenden immer die **aktuelle** Datei. Bereits erzeugte PDFs bleiben unverändert.
+- Ändert sich die Version **nach** der Auswahl, sperrt die App Vorschau und Export mit dem Hinweis „Die Vorlage wurde inzwischen geändert (neue Version). Bitte die Vorlage erneut auswählen.“ So entsteht kein Brief mit einem Text, den Sie nicht gesehen haben.
+- Bereits erzeugte PDFs bleiben unverändert.
 - Die App bewahrt alte Brieftexte nicht auf. Für eine Historie der Texte: Änderungen mit Git festhalten.

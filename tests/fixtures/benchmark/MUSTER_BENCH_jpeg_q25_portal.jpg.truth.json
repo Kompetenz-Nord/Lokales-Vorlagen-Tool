@@ -1,0 +1,15 @@
+{
+  "contract.application_number": "123456789",
+  "contract.contract_type": "Eigenvertrag",
+  "contract.end_date": "2065-08-01",
+  "contract.intermediary": "Beispiel Finanz AG (MUSTER)",
+  "contract.number": "5550123-4",
+  "contract.product": "Basisrente Invest (MUSTER)",
+  "contract.start_date": "2022-02-01",
+  "contract.status": "Ruhend",
+  "insured.first_name": "Max",
+  "insured.last_name": "Beispiel",
+  "insurer.name": "Beispiel Lebensversicherung AG",
+  "policyholder.first_name": "Max",
+  "policyholder.name": "Beispiel"
+}

@@ -397,3 +397,58 @@ def test_file_unchanged_after_check(tmp_path: Path, kind: str):
     check_document(path, password="MUSTER-pw" if kind == "encrypted" else None)
     check_document(path)
     assert fingerprint(path) == before
+
+
+# ---------------------------------------------------------------------------
+# PRIV-05: Pixelbomben unterhalb der Pillow-Grenze werden abgelehnt
+# ---------------------------------------------------------------------------
+
+
+def _blank_gray_png(path: Path, width: int, height: int) -> Path:
+    """Gültiges, sehr großes Graustufen-PNG zeilenweise schreiben (wenig Speicher, ca. 200 KB)."""
+    import struct
+    import zlib
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+
+    comp = zlib.compressobj(9)
+    row = b"\x00" + b"\xff" * width
+    idat = bytearray()
+    for _ in range(height):
+        idat += comp.compress(row)
+    idat += comp.flush()
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    path.write_bytes(
+        b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", bytes(idat)) + chunk(b"IEND", b"")
+    )
+    return path
+
+
+@pytest.mark.filterwarnings("ignore::PIL.Image.DecompressionBombWarning")
+def test_priv_05_pixel_bomb_below_pillow_limit_is_rejected(tmp_path: Path):
+    import time
+
+    from insurance_app.documents.pages import MAX_IMAGE_PIXELS
+
+    path = _blank_gray_png(tmp_path / "riesig.png", 13000, 13000)  # 169 Mio. Bildpunkte
+    assert path.stat().st_size < 2 * 1024 * 1024
+    assert MAX_IMAGE_PIXELS < 13000 * 13000
+    started = time.monotonic()
+    result = check_document(path)
+    assert not result.ok
+    assert codes(result).get("TOO_LARGE") == Severity.ERROR
+    assert result.pages == [] and result.page_count == 0
+    assert time.monotonic() - started < 5  # ohne vollständiges Dekodieren
+
+
+def test_priv_05_cap_allows_a4_1200_dpi_and_uses_limit(tmp_path: Path, monkeypatch):
+    import insurance_app.documents.intake as intake
+
+    assert intake.MAX_IMAGE_PIXELS >= 9924 * 14031  # DIN A4 mit 1200 dpi bleibt zulässig
+    path = tmp_path / "scan.png"
+    path.write_bytes(png_bytes(text_image(["MUSTER"], size_px=(400, 300)), dpi=(150, 150)))
+    monkeypatch.setattr(intake, "MAX_IMAGE_PIXELS", 400 * 300 - 1)
+    assert codes(check_document(path)).get("TOO_LARGE") == Severity.ERROR
+    monkeypatch.setattr(intake, "MAX_IMAGE_PIXELS", 400 * 300)
+    assert check_document(path).ok

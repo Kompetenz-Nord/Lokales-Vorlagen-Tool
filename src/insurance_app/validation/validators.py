@@ -12,10 +12,12 @@ from decimal import Decimal, InvalidOperation
 
 from insurance_app.core.fields import FIELD_REGISTRY, FieldDef, FieldType
 from insurance_app.core.models import FieldStatus, FieldValue, Severity, ValidationMessage
+from insurance_app.core.textutil import parse_german_date
 
 __all__ = [
     "IBAN_LENGTHS",
     "LARGE_AMOUNT_THRESHOLD",
+    "PREMIUM_END_CODE",
     "iban_is_valid",
     "postal_code_de_is_valid",
     "validate_case",
@@ -65,6 +67,8 @@ IBAN_LENGTHS: dict[str, int] = {
 }
 
 LARGE_AMOUNT_THRESHOLD = Decimal("100000")
+#: Letzte Beitragsfälligkeit nach Ablauf/Rentenbeginn (früher „PREMIUM_END_AFTER_END“)
+PREMIUM_END_CODE = "DATE_ORDER_PREMIUM_END"
 
 _IBAN_SHAPE = re.compile(r"^[A-Z]{2}\d{2}[A-Z0-9]{11,30}$")
 _CONTRACT_ALLOWED = re.compile(r"^[A-Z0-9./ -]+$")
@@ -217,6 +221,17 @@ def validate_field(fdef: FieldDef, fv: FieldValue, today: date | None = None) ->
                     Severity.ERROR, "MONTH_INVALID", f"„{fdef.label}“ ist kein gültiger Monat (MM.JJJJ).", key
                 )
             )
+        elif _month_input_has_other_day(fv.value):
+            # Altbestand: früher wurde der Tag eines vollen Datums stillschweigend verworfen
+            out.append(
+                _msg(
+                    Severity.WARNING,
+                    "MONTH_DAY_NOT_FIRST",
+                    f"„{fdef.label}“: Eingegeben wurde ein Tagesdatum, das Formular gilt aber immer "
+                    "zum 01. des Monats. Bitte nur Monat und Jahr (MM.JJJJ) eingeben.",
+                    key,
+                )
+            )
     elif dtype == FieldType.AMOUNT:
         try:
             amount = Decimal(value)
@@ -312,6 +327,14 @@ def validate_field(fdef: FieldDef, fv: FieldValue, today: date | None = None) ->
     return out
 
 
+def _month_input_has_other_day(raw: str | None) -> bool:
+    """Enthält die Eingabe eines Monatsfelds ein volles Datum mit einem anderen Tag als dem 01.?"""
+    if not raw:
+        return False
+    d = parse_german_date(raw)
+    return d is not None and d.day != 1
+
+
 def _check_contract_number(fdef: FieldDef, value: str) -> list[ValidationMessage]:
     key = fdef.key
     out: list[ValidationMessage] = []
@@ -395,10 +418,11 @@ def validate_case(
         ):
             other, _ = _date_of(all_fields, other_key)
             if other and premium_end > other:
+                # Feldübergreifende Datumsreihenfolge: Code-Familie DATE_ORDER_* (wird im Vorgang angezeigt)
                 out.append(
                     _msg(
                         Severity.WARNING,
-                        "PREMIUM_END_AFTER_END",
+                        PREMIUM_END_CODE,
                         f"Die letzte Beitragsfälligkeit liegt nach dem {label}. Bitte prüfen.",
                         "contract.premium_end_date",
                     )

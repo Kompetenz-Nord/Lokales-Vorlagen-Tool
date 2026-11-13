@@ -2,7 +2,9 @@
 
 Regeln (identisch zur Formularbefüllung):
 * Nur Werte mit Status ``CONFIRMED`` oder ``MANUAL`` werden gedruckt.
-* ``NOT_APPLICABLE`` gilt als bewusste Entscheidung „leer“.
+* ``NOT_APPLICABLE`` gilt als bewusste Entscheidung „leer“ – außer bei rechtlich
+  relevanten Ja/Nein- und Auswahlfeldern: Dort ist „nicht relevant“ keine
+  Entscheidung, der Wert gilt als offen.
 * Rechtlich relevante Auswahlen (``legal_relevant``) müssen ausdrücklich
   getroffen sein, bevor ein davon abhängiger Textbaustein entschieden werden kann.
 * Fehlende Pflichtwerte blockieren den finalen Export; in der Vorschau erscheinen
@@ -21,7 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..core.fields import FIELD_REGISTRY, FREQUENCY_CHOICES, FieldType
 from ..core.models import FieldStatus, FieldValue, Severity, ValidationMessage
-from ..templates.resolver import ChecklistItem
+from ..templates.resolver import ChecklistItem, is_legal_decision_field
 from ..templates.schema import Condition
 from .schema import PLACEHOLDER, LetterBlock, LetterHint, LetterTemplate
 
@@ -173,7 +175,8 @@ class _Ctx:
         if fv.status.is_released:
             return True, fv.normalized_value if fv.normalized_value not in (None, "") else (fv.value or None)
         if fv.status == FieldStatus.NOT_APPLICABLE:
-            return True, None
+            # „nicht relevant“ ersetzt keine ausdrückliche rechtliche Auswahl
+            return (False, None) if is_legal_decision_field(key) else (True, None)
         return False, None
 
     def report_unreleased(self, key: str, *, required: bool, reason: str = "value") -> None:
@@ -184,6 +187,11 @@ class _Ctx:
             code, msg = "CONFLICT", f"{label}: Konflikt zwischen Quellen nicht gelöst"
         elif status in (FieldStatus.EXTRACTED,) or (status == FieldStatus.UNCLEAR and fv and fv.value):
             code, msg = "UNCONFIRMED", f"{label}: Wert noch nicht bestätigt"
+        elif status == FieldStatus.NOT_APPLICABLE and is_legal_decision_field(key):
+            code, msg = (
+                "DECISION_REQUIRED",
+                f"Bitte ausdrücklich entscheiden: {label} („nicht relevant“ ist hier keine Entscheidung)",
+            )
         elif status == FieldStatus.NOT_APPLICABLE:
             code, msg = (
                 "NOT_APPLICABLE_REQUIRED",

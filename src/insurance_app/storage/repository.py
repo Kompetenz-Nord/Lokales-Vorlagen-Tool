@@ -7,6 +7,10 @@ Grundsätze
   oder verschoben. Die Kopie heißt ``<Dokument-ID><Endung>`` (keine Namen im
   Dateinamen) und ist schreibgeschützt.
 * Der Verlauf wird nur ergänzt, nie überschrieben.
+* Optimistische Sperre: Jeder Speichervorgang erhöht ``Case.revision``. Ein
+  veralteter Stand (anderswo inzwischen gespeichert) wird abgewiesen
+  (:class:`StaleCaseError`); ein gelöschter Vorgang wird nie wieder angelegt
+  (:class:`CaseNotFoundError`).
 * Logs enthalten nur IDs und Zähler – keine Inhalte, Namen oder Dateinamen.
 """
 
@@ -26,7 +30,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from insurance_app.core.case import Case, CaseSummary, PipelineStage, SourceDocument, new_document_id
+from insurance_app.core.case import Bundle, Case, CaseSummary, PipelineStage, SourceDocument, new_document_id
 from insurance_app.core.models import FieldStatus, HistoryEntry
 from insurance_app.core.paths import AppPaths
 from insurance_app.core.textutil import fold
@@ -40,6 +44,7 @@ __all__ = [
     "CaseRepository",
     "DocumentImportError",
     "DocumentNotFoundError",
+    "StaleCaseError",
     "count_open_issues",
     "file_sha256",
 ]
@@ -69,6 +74,14 @@ class CaseNotFoundError(StorageError, LookupError):
 
     def __init__(self, case_id: str) -> None:
         super().__init__(f"Der Vorgang {case_id} wurde nicht gefunden.")
+        self.case_id = case_id
+
+
+class StaleCaseError(StorageError):
+    """Der Vorgang wurde inzwischen an anderer Stelle gespeichert (veralteter Stand)."""
+
+    def __init__(self, case_id: str) -> None:
+        super().__init__("Der Vorgang wurde inzwischen an anderer Stelle geändert. Bitte neu laden.")
         self.case_id = case_id
 
 
@@ -209,18 +222,25 @@ class CaseRepository:
         return self.db.query_one("SELECT 1 FROM cases WHERE id = ?", (case_id,)) is not None
 
     def save_case(self, case: Case) -> None:
-        """Vorgang speichern (Upsert). Setzt ``updated_at``.
+        """Vorgang speichern. Setzt ``updated_at`` und erhöht ``case.revision``.
 
+        * ``revision == 0`` (noch nie gespeichert): neuer Datensatz. Gibt es die ID
+          schon, wird nichts überschrieben (:class:`StaleCaseError`).
+        * ``revision > 0``: Aktualisierung nur, wenn der gespeicherte Stand noch
+          ``case.revision`` ist – sonst :class:`StaleCaseError` (anderswo geändert)
+          bzw. :class:`CaseNotFoundError` (inzwischen gelöscht, wird nicht neu angelegt).
         * Dokumenttabelle wird mit ``case.documents`` abgeglichen.
         * Verlauf: Nur neue Einträge (über die bereits gespeicherte Anzahl hinaus) werden angehängt.
+          Dank der Standprüfung stammt der Verlauf immer vom zuletzt gespeicherten Stand ab.
         """
         _check_id(case.id)
+        expected = int(case.revision)
+        new_revision = expected + 1
         case.touch()
-        data_json = case.model_dump_json()
-        row = (
-            case.id,
+        # JSON mit dem neuen Stand speichern; das Objekt erst nach Erfolg anpassen
+        data_json = case.model_copy(update={"revision": new_revision}).model_dump_json()
+        values = (
             case.title,
-            _iso(case.created_at),
             _iso(case.updated_at),
             int(case.stage),
             case.template_id,
@@ -229,32 +249,58 @@ class CaseRepository:
             _search_text(case),
             len(case.documents),
             count_open_issues(case),
+            new_revision,
+            case.bundle_id,
         )
         try:
             with self.db.transaction() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO cases(id, title, created_at, updated_at, stage, template_id, archived,
-                                      data_json, search_text, document_count, open_issues)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        title = excluded.title,
-                        updated_at = excluded.updated_at,
-                        stage = excluded.stage,
-                        template_id = excluded.template_id,
-                        archived = excluded.archived,
-                        data_json = excluded.data_json,
-                        search_text = excluded.search_text,
-                        document_count = excluded.document_count,
-                        open_issues = excluded.open_issues
-                    """,
-                    row,
-                )
+                if expected <= 0:
+                    if conn.execute("SELECT 1 FROM cases WHERE id = ?", (case.id,)).fetchone():
+                        raise StaleCaseError(case.id)
+                    conn.execute(
+                        """
+                        INSERT INTO cases(title, updated_at, stage, template_id, archived, data_json,
+                                          search_text, document_count, open_issues, revision, bundle_id,
+                                          id, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (*values, case.id, _iso(case.created_at)),
+                    )
+                else:
+                    cur = conn.execute(
+                        """
+                        UPDATE cases SET title = ?, updated_at = ?, stage = ?, template_id = ?, archived = ?,
+                                         data_json = ?, search_text = ?, document_count = ?,
+                                         open_issues = ?, revision = ?, bundle_id = ?
+                        WHERE id = ? AND revision = ?
+                        """,
+                        (*values, case.id, expected),
+                    )
+                    if cur.rowcount == 0:
+                        if conn.execute("SELECT 1 FROM cases WHERE id = ?", (case.id,)).fetchone() is None:
+                            raise CaseNotFoundError(case.id)
+                        raise StaleCaseError(case.id)
                 self._sync_documents(conn, case)
                 self._append_history(conn, case)
+        except StaleCaseError:
+            log.warning("Vorgang %s nicht gespeichert: veralteter Stand", case.id)
+            raise
+        except CaseNotFoundError:
+            log.warning("Vorgang %s nicht gespeichert: inzwischen gelöscht", case.id)
+            raise
         except sqlite3.Error as exc:
             log.error("Vorgang %s konnte nicht gespeichert werden (%s)", case.id, type(exc).__name__)
             raise StorageError("Der Vorgang konnte nicht gespeichert werden.") from exc
+        case.revision = new_revision
+
+    def current_revision(self, case_id: str) -> int | None:
+        """Gespeicherter Stand eines Vorgangs (``None``, wenn es ihn nicht gibt)."""
+        try:
+            _check_id(case_id)
+        except ValueError:
+            return None
+        row = self.db.query_one("SELECT revision FROM cases WHERE id = ?", (case_id,))
+        return int(row["revision"]) if row is not None else None
 
     def _sync_documents(self, conn: sqlite3.Connection, case: Case) -> None:
         ids = [d.id for d in case.documents]
@@ -317,11 +363,13 @@ class CaseRepository:
             _check_id(case_id)
         except ValueError:
             raise CaseNotFoundError(str(case_id)[:64]) from None
-        row = self.db.query_one("SELECT data_json FROM cases WHERE id = ?", (case_id,))
+        row = self.db.query_one("SELECT data_json, revision FROM cases WHERE id = ?", (case_id,))
         if row is None:
             raise CaseNotFoundError(case_id)
         try:
-            return Case.model_validate_json(row["data_json"])
+            case = Case.model_validate_json(row["data_json"])
+            case.revision = int(row["revision"])  # die Spalte ist maßgeblich
+            return case
         except ValidationError as exc:
             log.error("Vorgang %s ist nicht lesbar (%d Validierungsfehler)", case_id, exc.error_count())
             raise StorageError(
@@ -329,7 +377,11 @@ class CaseRepository:
             ) from exc
 
     def list_cases(
-        self, search: str | None = None, include_archived: bool = False, limit: int = 200
+        self,
+        search: str | None = None,
+        include_archived: bool = False,
+        limit: int = 200,
+        bundle_id: str | None = None,
     ) -> list[CaseSummary]:
         """Vorgänge für das Dashboard (neueste zuerst).
 
@@ -340,6 +392,9 @@ class CaseRepository:
         params: list[Any] = []
         if not include_archived:
             where.append("archived = 0")
+        if bundle_id is not None:
+            where.append("bundle_id = ?")
+            params.append(bundle_id)
         for term in (search or "").split():
             folded = fold(term)
             compact = _compact(term)
@@ -351,7 +406,7 @@ class CaseRepository:
             where.append(clause + ")")
         sql = (
             "SELECT id, title, created_at, updated_at, stage, template_id, archived, document_count, "
-            "open_issues FROM cases"
+            "open_issues, bundle_id FROM cases"
         )
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -375,9 +430,64 @@ class CaseRepository:
                     document_count=int(r["document_count"]),
                     archived=bool(r["archived"]),
                     open_issues=int(r["open_issues"]),
+                    bundle_id=r["bundle_id"],
                 )
             )
         return out
+
+    # ------------------------------------------------------------------
+    # Kundenmappen
+    # ------------------------------------------------------------------
+    def create_bundle(self, title: str) -> Bundle:
+        bundle = Bundle(title=(title or "").strip() or "Kundenmappe")
+        self.db.execute(
+            "INSERT INTO bundles(id, title, created_at) VALUES (?, ?, ?)",
+            (bundle.id, bundle.title, _iso(bundle.created_at)),
+        )
+        return bundle
+
+    def list_bundles(self) -> list[Bundle]:
+        rows = self.db.query_all(
+            "SELECT b.id, b.title, b.created_at, COUNT(c.id) AS n FROM bundles b "
+            "LEFT JOIN cases c ON c.bundle_id = b.id GROUP BY b.id ORDER BY b.created_at DESC"
+        )
+        return [
+            Bundle(
+                id=r["id"], title=r["title"], created_at=_parse_dt(r["created_at"]), case_count=int(r["n"])
+            )
+            for r in rows
+        ]
+
+    def get_bundle(self, bundle_id: str) -> Bundle:
+        r = self.db.query_one(
+            "SELECT b.id, b.title, b.created_at, (SELECT COUNT(*) FROM cases c WHERE c.bundle_id = b.id) AS n "
+            "FROM bundles b WHERE b.id = ?",
+            (bundle_id,),
+        )
+        if r is None:
+            raise StorageError("Kundenmappe nicht gefunden.")
+        return Bundle(
+            id=r["id"], title=r["title"], created_at=_parse_dt(r["created_at"]), case_count=int(r["n"])
+        )
+
+    def rename_bundle(self, bundle_id: str, title: str) -> None:
+        self.db.execute(
+            "UPDATE bundles SET title = ? WHERE id = ?", ((title or "").strip() or "Kundenmappe", bundle_id)
+        )
+
+    def delete_bundle(self, bundle_id: str, delete_cases: bool = False) -> None:
+        """Mappe löschen. Vorgänge werden nur mit ``delete_cases=True`` mitgelöscht, sonst aus der Mappe gelöst."""
+        case_ids = [
+            r["id"] for r in self.db.query_all("SELECT id FROM cases WHERE bundle_id = ?", (bundle_id,))
+        ]
+        for cid in case_ids:
+            if delete_cases:
+                self.delete_case(cid)
+            else:
+                case = self.load_case(cid)
+                case.bundle_id = None
+                self.save_case(case)
+        self.db.execute("DELETE FROM bundles WHERE id = ?", (bundle_id,))
 
     def list_history(self, case_id: str) -> list[HistoryEntry]:
         """Gespeicherter Verlauf eines Vorgangs (älteste zuerst)."""
@@ -404,8 +514,19 @@ class CaseRepository:
         ]
 
     def archive_case(self, case_id: str, archived: bool = True) -> None:
-        """Vorgang archivieren bzw. wiederherstellen."""
-        case = self.load_case(case_id)
+        """Vorgang archivieren bzw. wiederherstellen.
+
+        Auch ein Vorgang, dessen gespeicherte Daten nicht mehr lesbar sind
+        (beschädigt oder aus einer neueren Programmversion), lässt sich
+        archivieren – dann nur über die Listenspalte, ohne die Daten zu laden.
+        """
+        try:
+            case = self.load_case(case_id)
+        except CaseNotFoundError:
+            raise
+        except StorageError:
+            self._archive_unreadable(case_id, archived)
+            return
         if case.archived == archived:
             return
         case.archived = archived
@@ -419,8 +540,44 @@ class CaseRepository:
         self.save_case(case)
         log.info("Vorgang %s %s", case_id, "archiviert" if archived else "wiederhergestellt")
 
+    def _archive_unreadable(self, case_id: str, archived: bool) -> None:
+        """Archiv-Kennzeichen eines nicht lesbaren Vorgangs setzen (ohne Modellprüfung)."""
+        try:
+            with self.db.transaction() as conn:
+                cur = conn.execute(
+                    "UPDATE cases SET archived = ?, updated_at = ?, revision = revision + 1 "
+                    "WHERE id = ? AND archived != ?",
+                    (int(archived), _iso(datetime.now(UTC)), case_id, int(archived)),
+                )
+                if cur.rowcount == 0:
+                    return  # bereits im gewünschten Zustand
+                conn.execute(
+                    "INSERT INTO history(case_id, timestamp, actor, action, detail) VALUES (?, ?, ?, ?, ?)",
+                    (
+                        case_id,
+                        _iso(datetime.now(UTC)),
+                        "user",
+                        "archived" if archived else "unarchived",
+                        ("Vorgang archiviert" if archived else "Vorgang wiederhergestellt")
+                        + " (gespeicherte Daten nicht lesbar)",
+                    ),
+                )
+        except sqlite3.Error as exc:
+            log.error("Vorgang %s: Archivieren fehlgeschlagen (%s)", case_id, type(exc).__name__)
+            raise StorageError("Der Vorgang konnte nicht archiviert werden.") from exc
+        log.info("Nicht lesbarer Vorgang %s %s", case_id, "archiviert" if archived else "wiederhergestellt")
+
+    def document_ids(self, case_id: str) -> list[str]:
+        """Dokument-IDs eines Vorgangs aus der Dokumenttabelle (ohne die Vorgangsdaten zu laden)."""
+        _check_id(case_id)
+        return [r["id"] for r in self.db.query_all("SELECT id FROM documents WHERE case_id = ?", (case_id,))]
+
     def delete_case(self, case_id: str) -> None:
-        """Vorgang endgültig löschen: Datenbankeinträge und Vorgangsordner (inkl. Dokumentkopien)."""
+        """Vorgang endgültig löschen: Datenbankeinträge und Vorgangsordner (inkl. Dokumentkopien).
+
+        Die gespeicherten Daten werden dafür nicht geladen – auch beschädigte
+        Vorgänge lassen sich so vollständig löschen.
+        """
         _check_id(case_id)
         folder = self.case_dir(case_id)
         with self.db.transaction() as conn:

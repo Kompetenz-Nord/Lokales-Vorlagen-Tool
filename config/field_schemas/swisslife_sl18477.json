@@ -194,10 +194,15 @@
       "required": true,
       "page": 1,
       "compose": "{insured.last_name}, {insured.first_name}",
-      "conditions": [
+      "conditions": [],
+      "any_conditions": [
         {
           "field": "order.continuation_mode",
           "equals": "private"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
         }
       ]
     },
@@ -209,10 +214,15 @@
       "date_part": "day",
       "required": true,
       "page": 1,
-      "conditions": [
+      "conditions": [],
+      "any_conditions": [
         {
           "field": "order.continuation_mode",
           "equals": "private"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
         }
       ]
     },
@@ -224,10 +234,15 @@
       "date_part": "month",
       "required": true,
       "page": 1,
-      "conditions": [
+      "conditions": [],
+      "any_conditions": [
         {
           "field": "order.continuation_mode",
           "equals": "private"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
         }
       ]
     },
@@ -239,10 +254,15 @@
       "date_part": "year",
       "required": true,
       "page": 1,
-      "conditions": [
+      "conditions": [],
+      "any_conditions": [
         {
           "field": "order.continuation_mode",
           "equals": "private"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
         }
       ]
     },
@@ -253,10 +273,15 @@
       "required": true,
       "page": 1,
       "compose": "{insured.street} {insured.house_number?}",
-      "conditions": [
+      "conditions": [],
+      "any_conditions": [
         {
           "field": "order.continuation_mode",
           "equals": "private"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
         }
       ]
     },
@@ -267,10 +292,15 @@
       "required": true,
       "page": 1,
       "source": "insured.postal_code",
-      "conditions": [
+      "conditions": [],
+      "any_conditions": [
         {
           "field": "order.continuation_mode",
           "equals": "private"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
         }
       ]
     },
@@ -281,10 +311,15 @@
       "required": true,
       "page": 1,
       "source": "insured.city",
-      "conditions": [
+      "conditions": [],
+      "any_conditions": [
         {
           "field": "order.continuation_mode",
           "equals": "private"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
         }
       ]
     },
@@ -295,10 +330,15 @@
       "required": true,
       "page": 1,
       "source": "insured.birth_place",
-      "conditions": [
+      "conditions": [],
+      "any_conditions": [
         {
           "field": "order.continuation_mode",
           "equals": "private"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
         }
       ]
     },
@@ -309,10 +349,15 @@
       "required": true,
       "page": 1,
       "source": "insured.nationality",
-      "conditions": [
+      "conditions": [],
+      "any_conditions": [
         {
           "field": "order.continuation_mode",
           "equals": "private"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
         }
       ]
     },
@@ -674,7 +719,8 @@
     "Seiten 3–6 (Einwilligungs-/Schweigepflichtentbindungserklärungen, Dienstleisterliste, Datenschutzhinweise) bleiben unverändert erhalten.",
     "Die Einwilligung auf Seite 3 erteilt ausschließlich der Mitarbeiter selbst durch Unterschrift – die App setzt keine Einwilligung.",
     "Abschnitt B (Unterlagen) und F (Beratungsverzicht) haben keine Formularfelder; sie werden durch die Unterschriften in G bestätigt.",
-    "Bankdaten werden nur aus der Auftragserfassung übernommen, nie automatisch aus Quelldokumenten (keine fremden Bankdaten)."
+    "Bankdaten werden nur aus der Auftragserfassung übernommen, nie automatisch aus Quelldokumenten (keine fremden Bankdaten).",
+    "Annahme: Bei privater Fortführung für den Zwischenzeitraum wird die versicherte Person für diese Zeit Versicherungsnehmer; ihre Personendaten in Abschnitt C werden deshalb ebenfalls ausgefüllt. Fachlich mit Swiss Life zu bestätigen."
   ],
   "mapping_confirmed": true
 }

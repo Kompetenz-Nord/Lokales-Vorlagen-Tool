@@ -7,6 +7,7 @@ einheitlich arbeiten. Geprüft wird die tatsächlich erzeugte Datei (nicht nur d
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 from pathlib import Path
 
@@ -17,11 +18,25 @@ from ..core.models import Severity
 from ..core.textutil import normalize_ws
 from ..pdf.qa import QaCheck, QaReport
 from ..pdf.render import available_renderers, render_page
-from .compose import LetterPlan
-from .din5008 import FORM_A, FORM_B
+from .compose import MISSING_MARK, LetterPlan
+from .din5008 import din_layout
 
 PT_PER_MM = 72 / 25.4
 A4_PT = (595.28, 841.89)
+MISSING_PREFIX = MISSING_MARK.split("{")[0].strip()  # "[Fehlt:"
+# Platzhalter-Format der Briefvorlagen (bewusst etwas weiter als ``schema.PLACEHOLDER``,
+# damit auch fehlerhaft geschriebene Platzhalter wie ``{Order.Feld|x}`` auffallen)
+UNRESOLVED_PLACEHOLDER = re.compile(r"\{(?:@[A-Za-z_]+|[A-Za-z_]+\.[A-Za-z0-9_]+\??(?:\|[A-Za-z_]+)?)\}")
+
+
+def has_unresolved_marks(text: str) -> bool:
+    """Enthält der Text nicht aufgelöste Vorlagen-Platzhalter oder „[Fehlt: …]“-Markierungen?
+
+    Geprüft wird nur das Platzhalter-Format der Briefvorlagen (``{feld.schluessel…}``,
+    ``{@baustein}``) – eine geschweifte Klammer in einem Nutzerwert (z. B. „Abt. {K}“)
+    ist kein Fehler.
+    """
+    return MISSING_PREFIX in text or UNRESOLVED_PLACEHOLDER.search(text) is not None
 
 
 def _sha(path: Path) -> str:
@@ -39,6 +54,7 @@ def run_letter_qa(
     dpi: int = 100,
 ) -> QaReport:
     started = time.monotonic()
+    lay = din_layout(form)  # unbekannte Briefform -> ValueError (wie beim Erzeugen)
     checks: list[QaCheck] = []
 
     def add(
@@ -90,7 +106,7 @@ def run_letter_qa(
         Severity.WARNING,
     )
 
-    has_marks = "[Fehlt" in full_text or "{" in full_text
+    has_marks = has_unresolved_marks(full_text)
     add(
         "NO_PLACEHOLDERS",
         not has_marks or not final,
@@ -123,7 +139,6 @@ def run_letter_qa(
         else "Nicht eingebettete Schrift gefunden.",
     )
 
-    lay = FORM_A if form == "A" else FORM_B
     box = pymupdf.Rect(
         (lay.addr_left) / 1,
         lay.anschrift_top / 1,

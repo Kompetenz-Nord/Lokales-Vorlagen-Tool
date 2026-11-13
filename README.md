@@ -107,8 +107,8 @@ Geprüft am 13.11.2026 über die Programmlogik (`AppService`): Der Ablauf führt
 | Bereich | Anforderung | Status |
 |---|---|---|
 | Linux (x86_64) | Ubuntu 24.04 mit Python 3.13 | **getestet** (Entwicklungsumgebung: 4 CPU-Kerne, 15 GB RAM, keine Grafikkarte) |
-| Windows | Windows 10 oder 11, 64 Bit | Zielplattform, **nicht getestet** |
-| macOS | Apple Silicon oder Intel | Zielplattform, **nicht getestet**. Das Build-Skript trägt macOS 11 als Mindestversion ein; ob die verwendete Qt-Version darauf läuft, ist nicht geprüft. |
+| Windows | Windows 10 oder 11, 64 Bit (Annahme) | Zielplattform, **nicht getestet** |
+| macOS | Apple Silicon oder Intel | Zielplattform, **nicht getestet**. Die PyInstaller-Spezifikation trägt macOS 11 als Mindestversion ein; ob die verwendete Qt-Version darauf läuft, ist nicht geprüft. |
 | Python | 3.11 oder neuer (getestet: 3.13) | nur für Start aus dem Quellcode und für den Build nötig |
 | Tesseract OCR | Version 5 mit Sprachpaket **Deutsch** (`deu`) | optional, aber für Scans und Bilder nötig. Ohne Tesseract liest die App nur PDFs mit Textebene. |
 | Speicherplatz | Python-Pakete unter Linux gemessen: ca. 0,9 GB (davon PySide6 ca. 0,7 GB) | Windows/macOS nicht gemessen |
@@ -183,10 +183,11 @@ Tesseract mit deutschem Sprachpaket über die Paketverwaltung installieren (unte
 | Befehl | Wirkung |
 |---|---|
 | `python app.py` | Startet die Oberfläche. Beim ersten Start erscheint ein kurzer Hinweis zu LOCAL ONLY. |
-| `python app.py --selftest` | Selbstprüfung ohne Oberfläche: Daten- und Exportordner, Status aller 9 Vorlagen, OCR, lokale KI und ein Musterfall in einem temporären Ordner. Rückgabewert 0 = in Ordnung, 1 = Fehler, 2 = Datenablage nicht nutzbar. |
+| `python app.py --selftest` | Selbstprüfung ohne Oberfläche: Daten- und Exportordner, Status aller 9 Vorlagen, OCR, lokale KI, ein Musterfall und – wenn Tesseract vorhanden ist – ein gescannter Musterbeleg (nur synthetische Daten, in einem temporären Ordner). Rückgabewert 0 = in Ordnung, 1 = Fehler, 2 = Datenablage nicht nutzbar. |
 | `python app.py --version` | Zeigt `Lokales Vorlagen-Tool 0.1.0`. |
-| `lokales-vorlagen-tool` | Gleicher Start wie `python app.py`, sobald das Paket mit `pip install -e .` installiert ist (in `.venv` aufrufen). |
+| `lokales-vorlagen-tool` | Gleicher Start wie `python app.py`, sobald das Paket mit `pip install -e .` installiert ist (in `.venv` aufrufen). Eingetragen in `pyproject.toml`; nicht gesondert getestet. |
 | `python scripts/generate_samples.py [Ordner]` | Erzeugt die synthetischen Musterdateien (Standard: `tests/fixtures/synthetic`). |
+| `python scripts/benchmark_extraction.py` | Misst die Erkennung auf synthetischen Testdokumenten (richtig / falsch / fehlt). Mit `--with-vlm` zusätzlich mit lokaler KI. Siehe [docs/BENCHMARK.md](docs/BENCHMARK.md). |
 | `python -m pytest -q -m "not slow"` | Automatische Tests ohne die langsamen OCR-/Darstellungstests. |
 
 Unter Windows statt `python` den Pfad `.\.venv\Scripts\python.exe` verwenden, unter macOS/Linux `./.venv/bin/python`.
@@ -201,7 +202,8 @@ Lokales Vorlagen-Tool 0.1.0 – Selbstprüfung
 [  OK  ] OCR tesseract: Tesseract 5.3.4 bereit (Sprachen: deu+eng).
 [ INFO ] OCR rapidocr: RapidOCR ist nicht installiert (optional: pip install rapidocr_onnxruntime).
 [ INFO ] Lokale KI: Deaktiviert – Die lokale KI ist ausgeschaltet. Die App funktioniert vollständig ohne sie.
-[  OK  ] Musterfall: Texterkennung und Extraktion funktionieren.
+[  OK  ] Musterfall: Textebene und Extraktion funktionieren.
+[  OK  ] Texterkennung (OCR): gescannter Musterbeleg korrekt gelesen.
 [  OK  ] Selbstprüfung abgeschlossen.
 ```
 
@@ -294,7 +296,7 @@ Schlagen die Tests fehl, bricht der Build ab.
 Was beim Update passiert:
 
 - **Ihre Daten bleiben erhalten.** `user_data/` und `exports/` sind von Git ausgeschlossen; `git pull` ändert sie nicht. Im Vorlagen-Studio importierte Vorlagen liegen ebenfalls im Datenordner.
-- **Datenbank-Migrationen** (Anpassung der Datenbankstruktur) laufen beim Start automatisch. Angewendete Versionen stehen in der Tabelle `schema_migrations` (aktuell Version 1).
+- **Datenbank-Migrationen** (Anpassung der Datenbankstruktur) laufen beim Start automatisch. Angewendete Versionen stehen in der Tabelle `schema_migrations` der Datenbank.
 - Eine Datenbank aus einer **neueren** Programmversion öffnet die App nicht. Meldung: „Die Datenbank stammt aus einer neueren Programmversion. Bitte die App aktualisieren.“ Ein Zurückstufen ist also nicht vorgesehen.
 - Mitgelieferte Dateien in `config/` und `assets/` werden durch das Update ersetzt. Eigene Änderungen dort (z. B. an Brieftexten) vorher sichern oder in Git festhalten.
 
@@ -308,9 +310,9 @@ Was beim Update passiert:
 | **macOS: Im Terminal läuft `tesseract`, in der App nicht** | Aus dem Finder gestartete Apps kennen den PATH des Terminals nicht. Deshalb sucht die App Homebrew-Pfade selbst (siehe oben). Hilft das nicht, den Pfad in den Einstellungen eintragen (`which tesseract` im Terminal zeigt ihn). |
 | **„Sprachpaket 'deu' fehlt“** | macOS: `brew install tesseract-lang`. Windows: Tesseract-Installation erneut starten und „German“ wählen. Prüfen mit `tesseract --list-langs`. |
 | **Qt-Fehler beim Start**, z. B. „Could not load the Qt platform plugin …“ | Qt ist die Bibliothek für die Oberfläche (über PySide6). Meist ist die Installation unvollständig. In der `.venv` neu installieren: `python -m pip install --force-reinstall PySide6`. Unter Linux fehlen oft Systembibliotheken für die Fensterdarstellung (bei Qt 6 häufig `libxcb-cursor0`). Ohne Bildschirm (z. B. Server) startet die Oberfläche nicht; dort nur `--selftest` nutzen. Diese Hinweise sind allgemeiner Natur und wurden nicht auf allen Systemen nachgestellt. |
-| **Passwortgeschütztes PDF** | Beim Hinzufügen fragt die App nach dem Passwort (Eingabe verdeckt). Das Passwort bleibt nur im Arbeitsspeicher, wird nie gespeichert. Bei falschem Passwort erscheint „Das Passwort war falsch“. **Nach einem Neustart** kennt die App das Passwort nicht mehr: Erkannte Werte bleiben erhalten, aber Seitenansicht und erneute Texterkennung brauchen es erneut („Passwort erforderlich – bitte erneut eingeben“). Derzeit hilft nur: Datei im Reiter „Dokumente“ entfernen und erneut hinzufügen. Bestätigte Werte bleiben dabei erhalten. |
+| **Passwortgeschütztes PDF** | Beim Hinzufügen fragt die App nach dem Passwort (Eingabe verdeckt). Das Passwort bleibt nur im Arbeitsspeicher, wird nie gespeichert. Bei falschem Passwort erscheint „Das Passwort war falsch“. **Nach einem Neustart** kennt die App das Passwort nicht mehr: Erkannte Werte bleiben erhalten, aber Seitenansicht und erneute Texterkennung brauchen es erneut („Passwort erforderlich – bitte erneut eingeben“). Derzeit hilft nur: Datei im Reiter „Dokumente“ entfernen und erneut hinzufügen. **Achtung:** Werte, die aus dieser Datei bestätigt wurden, setzt die App dabei zurück („Die Quelle dieses Werts wurde entfernt – bitte erneut prüfen.“). Sie müssen sie erneut bestätigen. Selbst eingetragene Werte bleiben. |
 | **Vorlage hat Status „Fehler“**, z. B. „Prüfsumme der Originalvorlage passt nicht zur Feldzuordnung (Datei verändert oder ersetzt)“ | Die Prüfsumme (SHA-256, ein digitaler Fingerabdruck der Datei) der PDF passt nicht mehr. Die Original-PDF in `assets/templates/originals` wurde verändert, z. B. in einem PDF-Programm gespeichert. Lösung: unveränderte Datei wiederherstellen (aus Git oder dem Programmpaket). Eine neue Formularversion des Versicherers im **Vorlagen-Studio** importieren, Zuordnung prüfen und bestätigen. Weitere Gründe für „Fehler“ (Feld fehlt, Seitenzahl, Passwort) zeigt das Studio an. |
-| **Exportordner nicht beschreibbar** | „Einstellungen & Datenschutz“ → „Exportordner ändern …“ und einen eigenen Ordner wählen; „Standardordner verwenden“ setzt zurück. Netzlaufwerke und Cloud-Ordner vermeiden. |
+| **Exportordner nicht beschreibbar**: „Der Exportordner ist nicht erreichbar oder nicht beschreibbar …“ | „Einstellungen & Datenschutz“ → „Exportordner ändern …“ und einen eigenen Ordner wählen; „Standardordner verwenden“ setzt zurück. Netzlaufwerke und Cloud-Ordner vermeiden. |
 | **„PDF jetzt erzeugen“ ist gesperrt** | Die Begründung steht neben dem Knopf: Vorschau fehlt oder ist veraltet, offene Pflichtpunkte in der Checkliste, oder technische Prüfung nicht bestanden. |
 | **Start nicht möglich: „Die lokale Datenablage konnte nicht geöffnet werden“** | Rechte am Datenordner prüfen. „Die lokale Datenbank ist beschädigt …“: Sicherung von `vorgaenge.sqlite3` zurückspielen. |
 | **Wo sind die Logs?** | `<Datenordner>/logs/app.log`. Sie enthalten nur technische Angaben (Zeit, Status, Fehlerklasse, Vorgangs-/Dokument-IDs). Für eine Fehlermeldung genügt diese Datei; bitte trotzdem vor der Weitergabe ansehen. |
@@ -345,7 +347,7 @@ src/insurance_app/
   samples/                  Musterfall-Generator (synthetisch)
   ui/                       PySide6-Oberfläche
 packaging/                  PyInstaller-Spezifikation
-scripts/                    Einrichtung und Build für Windows/macOS, Musterdateien
+scripts/                    Einrichtung und Build für Windows/macOS, Musterdateien, Benchmark
 tests/                      Automatische Tests (nur synthetische Daten)
 docs/                       Dokumentation
 ```

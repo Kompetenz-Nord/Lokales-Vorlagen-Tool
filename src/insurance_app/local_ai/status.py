@@ -65,22 +65,74 @@ class ModelCatalogEntry(BaseModel):
 
     name: str
     label: str
-    approx_download_gb: float  # ungefähre Downloadgröße
-    min_ram_gb: float  # Mindestens empfohlener Arbeitsspeicher
-    recommended_ram_gb: float
+    approx_download_gb: float  # ungefähre Downloadgröße (laut Recherche, ungeprüft)
+    min_ram_gb: float  # Mindestens empfohlener Arbeitsspeicher (Richtwert)
+    recommended_ram_gb: float  # für flüssigen Betrieb (Richtwert)
     license_hint: str
     verified: bool = False  # Größe/Lizenz NICHT geprüft (kein Zugriff auf die Ollama-Bibliothek)
     note: str = UNVERIFIED_NOTE
+    role: str = ""  # Aufgabe in der App
+    advantages: str = ""  # Vorteil gegenüber den anderen Modellen
+    num_ctx: int = 16384  # Kontextfenster für Bildanfragen (Ollama-Standard 4096 reicht für Bilder nicht)
+    kind: str = "vlm"  # "ocr" (liefert Text -> Regel-Extraktion) | "vlm" (liefert Felder als JSON mit Zitat)
+    sources: tuple[str, ...] = ()  # Quellen der Größenangaben (nur Information)
 
 
 MODEL_CATALOG: dict[str, ModelCatalogEntry] = {
-    "qwen3-vl:4b": ModelCatalogEntry(
-        name="qwen3-vl:4b",
-        label="Qwen3-VL 4B (kleiner, schneller)",
-        approx_download_gb=3.3,
+    "glm-ocr": ModelCatalogEntry(
+        name="glm-ocr",
+        label="GLM-OCR (Dokumenten- und Tabellen-Texterkennung)",
+        kind="ocr",
+        approx_download_gb=2.66,
+        verified=True,
+        note="Größe laut Ollama-Registry-Manifest (abgerufen am 13.11.2026). Lizenz ist im Manifest nicht angegeben – vor dem Einsatz beim Anbieter (Z.ai) prüfen.",
         min_ram_gb=8.0,
         recommended_ram_gb=16.0,
-        license_hint="vermutlich Apache 2.0 – bitte prüfen",
+        license_hint="keine Lizenzangabe im Ollama-Manifest – beim Anbieter Z.ai prüfen",
+        role="Texterkennung schwieriger Seiten (Scans, Fotos, Tabellen) – liefert Text, keine Feldzuordnung",
+        advantages=(
+            "Sehr klein (ca. 0,9 Mrd. Parameter) und spezialisiert auf Dokumente und Tabellen: "
+            "liest Scans und Tabellen meist besser als Tesseract und läuft auch ohne Grafikkarte."
+        ),
+        sources=(
+            "https://docs.z.ai/guides/vlm/glm-ocr",
+            "https://huggingface.co/docs/transformers/main/en/model_doc/glm_ocr",
+        ),
+    ),
+    "qwen3-vl:4b": ModelCatalogEntry(
+        name="qwen3-vl:4b",
+        label="Qwen3-VL 4B (präzise visuelle PDF- und Bildanalyse)",
+        approx_download_gb=3.34,
+        verified=True,
+        note="Größe laut Ollama-Registry-Manifest (abgerufen am 13.11.2026).",
+        min_ram_gb=8.0,
+        recommended_ram_gb=16.0,
+        license_hint="Apache 2.0 (laut Ollama-Manifest)",
+        role="Feldextraktion aus Seitenbildern als strukturiertes JSON mit wörtlichem Zitat als Beleg",
+        advantages=(
+            "Versteht Layout und Bildinhalt gemeinsam und ordnet Werte direkt den Feldern zu; "
+            "guter Kompromiss aus Genauigkeit und Ressourcenbedarf."
+        ),
+        sources=("https://codersera.com/blog/qwen3-vl-4b-vs-qwen3-vl-8b-benchmarks-vram-guide/",),
+    ),
+    "gemma4:e4b": ModelCatalogEntry(
+        name="gemma4:e4b",
+        label="Gemma 4 E4B (multimodales Allround-Modell)",
+        approx_download_gb=6.58,
+        verified=True,
+        min_ram_gb=16.0,
+        recommended_ram_gb=32.0,
+        license_hint="Apache 2.0 (laut Ollama-Manifest)",
+        role="Unabhängige Gegenprüfung der Feldextraktion (zweites Modell, andere Modellfamilie)",
+        advantages=(
+            "Zweite, unabhängige Einschätzung: Weichen Qwen3-VL und Gemma 4 voneinander ab, "
+            "markiert die App das Feld als Konflikt – Fehler einzelner Modelle fallen so eher auf."
+        ),
+        note="Größe laut Ollama-Registry-Manifest (abgerufen am 13.11.2026).",
+        sources=(
+            "https://www.itechguides.com/?p=331053",
+            "https://www.developersdigest.tech/local-models/gemma-4-e4b",
+        ),
     ),
     "qwen3-vl:8b": ModelCatalogEntry(
         name="qwen3-vl:8b",
@@ -89,6 +141,8 @@ MODEL_CATALOG: dict[str, ModelCatalogEntry] = {
         min_ram_gb=16.0,
         recommended_ram_gb=32.0,
         license_hint="vermutlich Apache 2.0 – bitte prüfen",
+        role="Alternative Feldextraktion mit größerem Modell",
+        advantages="Etwas genauer als die 4B-Variante, benötigt aber deutlich mehr Arbeitsspeicher.",
     ),
 }
 

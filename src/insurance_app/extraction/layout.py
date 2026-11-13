@@ -19,16 +19,18 @@ from __future__ import annotations
 
 import bisect
 import math
+import re
 import statistics
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field, replace
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from insurance_app.core.fields import FIELD_REGISTRY, FieldType
 from insurance_app.core.models import BoundingBox, PageText, Word
-from insurance_app.core.textutil import normalize_ws
+from insurance_app.core.textutil import fold, normalize_ws
 
-from .normalize import compact_key, is_placeholder
+from .normalize import compact_key, is_placeholder, normalize_value
 
 __all__ = [
     "LAYOUT_CONFIDENCE",
@@ -55,6 +57,20 @@ FUZZY_MIN_CHARS = 14
 TALL_WORD_FACTOR = 4.0  # Wörter, die viel höher als üblich sind (gedrehte Wasserzeichen), ignorieren
 MAX_SKEW_SLOPE = math.tan(math.radians(5.0))
 MIN_SKEW_SLOPE = 0.0015  # darunter gilt die Seite als gerade
+#: Eine Abschnittsüberschrift gilt höchstens so viele Zeilen weit nach unten
+SECTION_MAX_LINES = 12
+# Vorangestellte Wörter, die ein Label als früheren Wert kennzeichnen („Bisheriger Beitrag:“)
+_OLD_VALUE_QUALIFIER = re.compile(
+    r"^(?:bisherig|ursprueng|frueher|vorherig|vormalig|ehemalig|alte[rsmn]?$|alt$)"
+)
+_STRUCTURED_LABEL_TYPES = {
+    FieldType.DATE,
+    FieldType.MONTH,
+    FieldType.AMOUNT,
+    FieldType.IBAN,
+    FieldType.POSTAL_CODE,
+    FieldType.CONTRACT_NUMBER,
+}
 
 
 class Line(BaseModel):
@@ -418,6 +434,28 @@ class _Matcher:
             return hit
         return None
 
+    def label_with_own_value(self, seq: Sequence[_Tok], i: int) -> bool:
+        """Beginnt bei ``i`` ein eindeutiges Label mit eigenem, passendem Wert?
+
+        Beispiel: neben einem leeren „Vorname“ steht in der nächsten Spalte
+        „Geburtsdatum 12.03.1980“. „Geburtsdatum“ ist ein globales Label für ein
+        Datum, und der Rest ist ein gültiges Datum – das ist nicht der Vorname.
+        """
+        hit = self.match_at(seq, i)
+        if hit is None or hit.end >= len(seq):
+            return False
+        key = hit.phrase.global_key
+        fdef = FIELD_REGISTRY.get(key) if key else None
+        if fdef is None or fdef.dtype not in _STRUCTURED_LABEL_TYPES:
+            return False
+        rest = []
+        for idx in range(hit.end, len(seq)):
+            if idx > hit.end and self.gap(seq[idx - 1], seq[idx]) > self.geo.max_gap:
+                break
+            rest.append(seq[idx].word.text)
+        value = normalize_ws(" ".join(rest)).lstrip(":").strip()
+        return bool(value) and normalize_value(fdef, value)[0] is not None
+
 
 # ---------------------------------------------------------------------------
 # Hauptfunktion
@@ -491,6 +529,9 @@ def find_label_values(
             if not (seg_start or colon_end):
                 i = hit.end  # Phrase mitten im Fließtext: verbrauchen, keine Teiltreffer
                 continue
+            if not seg_start and _OLD_VALUE_QUALIFIER.match(fold(seq[i - 1].word.text).strip(".,:;()")):
+                i = hit.end  # „Bisheriger Beitrag:“, „Ursprüngliches Ablaufdatum:“ – früherer Wert
+                continue
             label_toks = seq[i : hit.end]
             box = union_bbox(t.word for t in label_toks)
             assert box is not None
@@ -509,10 +550,11 @@ def find_label_values(
             headings.append((rh.phrase.heading, rh.bbox, rh.cy))
 
     out: list[LayoutMatch] = []
+    section_reach = SECTION_MAX_LINES * (pitch if pitch is not None else 1.6 * geo.median_height)
     for rh in raw_hits:
         if rh.kind != "label":
             continue
-        section = _section_for(rh.bbox, rh.cy, headings, geo, page.width)
+        section = _section_for(rh.bbox, rh.cy, headings, geo, page.width, max_distance=section_reach)
         key, used_section = _resolve_key(rh.phrase, section, table)
         if key is None:
             continue
@@ -543,8 +585,19 @@ def _band_right(
     return band
 
 
-def _collect(seq: list[_Tok], matcher: _Matcher, geo: PageGeometry, max_gap: float) -> _Side:
-    """Wert ab dem Anfang von ``seq`` einsammeln."""
+def _collect(
+    seq: list[_Tok],
+    matcher: _Matcher,
+    geo: PageGeometry,
+    max_gap: float,
+    *,
+    check_label_value: bool = True,
+) -> _Side:
+    """Wert ab dem Anfang von ``seq`` einsammeln.
+
+    ``check_label_value``: auch ein eng geschriebenes Label mit eigenem Wert
+    (z. B. „Geburtsdatum 12.03.1980“) am Anfang beendet die Suche (leerer Wert).
+    """
     colon = False
     k = 0
     while k < len(seq) and not seq[k].ck:
@@ -553,7 +606,7 @@ def _collect(seq: list[_Tok], matcher: _Matcher, geo: PageGeometry, max_gap: flo
     seq = seq[k:]
     if not seq:
         return _Side(words=[], present=k > 0, first_is_label=False, colon=colon)
-    if matcher.label_start(seq, 0):
+    if matcher.label_start(seq, 0) or (check_label_value and matcher.label_with_own_value(seq, 0)):
         return _Side(words=[], present=True, first_is_label=True, colon=colon)
     vals = [seq[0]]
     for idx in range(1, len(seq)):
@@ -565,7 +618,7 @@ def _collect(seq: list[_Tok], matcher: _Matcher, geo: PageGeometry, max_gap: flo
             colon_label = seq[hit.end - 1].colon or (
                 hit.end < len(seq) and seq[hit.end].word.text.strip() == ":"
             )
-            if colon_label or (g > geo.seg_gap and matcher.separated_after(seq, hit.end)):
+            if colon_label or g > geo.seg_gap:
                 break  # nächstes Label (andere Spalte oder "… Geburtsdatum: …")
         vals.append(seq[idx])
     # abschließende reine Trenner entfernen
@@ -577,7 +630,9 @@ def _collect(seq: list[_Tok], matcher: _Matcher, geo: PageGeometry, max_gap: flo
 def _right(rh: _RawHit, toks: Sequence[_Tok], matcher: _Matcher, geo: PageGeometry) -> _Side:
     exclude = {id(t) for t in rh.toks}
     band = _band_right(rh.bbox, rh.cy, exclude, toks, geo)
-    side = _collect(band, matcher, geo, geo.max_gap)
+    # Nur bei Spaltenabstand ohne Doppelpunkt kann rechts schon das nächste Label stehen
+    column_gap = bool(band) and not rh.colon and (band[0].x0 - rh.bbox.x1) > geo.seg_gap
+    side = _collect(band, matcher, geo, geo.max_gap, check_label_value=column_gap)
     side.colon = side.colon or rh.colon
     if side.words:
         side.tight = (side.words[0].x0 - rh.bbox.x1) <= geo.seg_gap and not side.colon
@@ -675,7 +730,13 @@ def _section_for(
     headings: list[tuple[str, BoundingBox, float]],
     geo: PageGeometry,
     page_width: float,
+    max_distance: float | None = None,
 ) -> str | None:
+    """Nächste Überschrift über dem Label (gleiche Spalte).
+
+    Liegt sie weiter als ``max_distance`` entfernt, gilt das Label als außerhalb
+    jedes Abschnitts (z. B. eine Fußzeile weit unter dem Block „Versicherungsnehmer“).
+    """
     best: tuple[float, str] | None = None
     for name, hb, hcy in headings:
         if hcy >= label_cy - geo.tol_y:
@@ -684,7 +745,11 @@ def _section_for(
             continue
         if best is None or hcy > best[0]:
             best = (hcy, name)
-    return best[1] if best else None
+    if best is None:
+        return None
+    if max_distance is not None and label_cy - best[0] > max_distance:
+        return None
+    return best[1]
 
 
 def _resolve_key(phrase: _Phrase, section: str | None, table: _PhraseTable) -> tuple[str | None, bool]:

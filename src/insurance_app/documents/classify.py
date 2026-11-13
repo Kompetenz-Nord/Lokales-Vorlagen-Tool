@@ -253,23 +253,53 @@ def _letter_date(text: DocumentText) -> date | None:
     return best[3] if best else None
 
 
+# Ausdrückliche Gültigkeitsangaben einer Änderung
 _EFFECTIVE_TRIGGER = re.compile(
     r"\b(?:g(?:ü|ue|u)ltig\s+(?:ab|vom|zum)|wirksam\s+(?:ab|zum|vom|mit)|mit\s+wirkung\s+(?:vom|zum|ab)|"
-    r"(?:ä|ae|a)nderung\s+zum|(?:ä|ae|a)nderungsstichtag|stichtag\s+der\s+(?:ä|ae|a)nderung|ab\s+dem)\b",
+    r"(?:ä|ae|a)nderung\s+zum|(?:ä|ae|a)nderungsstichtag|stichtag\s+der\s+(?:ä|ae|a)nderung)\b",
     re.IGNORECASE,
 )
+# Schwacher Hinweis: „ab dem …“ steht oft auch bei Fälligkeiten („Beiträge sind ab dem … fällig“)
+_WEAK_EFFECTIVE_TRIGGER = re.compile(r"\bab\s+dem\b", re.IGNORECASE)
+_WEAK_EXCLUDED_CONTEXT = re.compile(
+    r"f(?:ä|ae|a)llig|zahlbar|zahlung|lastschrift|abbuchung|abgebucht|einzug|eingezogen", re.IGNORECASE
+)
+_SENTENCE_END = re.compile(r"\.\s+(?=[A-ZÄÖÜ])")
+_WEAK_CONTEXT_CHARS = 30
+_WEAK_CONTEXT_AFTER = 80
 _EFFECTIVE_WINDOW = 40
 _EFFECTIVE_MAX_GAP = 12
 
 
+def _trigger_dates(flat: str, trigger: re.Pattern[str], *, weak: bool) -> list[date]:
+    out: list[date] = []
+    for m in trigger.finditer(flat):
+        if weak:
+            before = flat[max(0, m.start() - _WEAK_CONTEXT_CHARS) : m.start()]
+            before = _SENTENCE_END.split(before)[-1]
+            after = _SENTENCE_END.split(flat[m.end() : m.end() + _WEAK_CONTEXT_AFTER])[0]
+            if _WEAK_EXCLUDED_CONTEXT.search(before + " " + after):
+                continue  # Fälligkeit/Zahlungstermin, kein Gültigkeitsdatum einer Änderung
+        window = flat[m.end() : m.end() + _EFFECTIVE_WINDOW]
+        found = find_dates(window)
+        if found and found[0][1][0] <= _EFFECTIVE_MAX_GAP:
+            out.append(found[0][0])
+    return out
+
+
 def _effective_date(text: DocumentText) -> date | None:
-    for page in text.pages:
-        flat = normalize_ws(page.text)
-        for m in _EFFECTIVE_TRIGGER.finditer(flat):
-            window = flat[m.end() : m.end() + _EFFECTIVE_WINDOW]
-            found = find_dates(window)
-            if found and found[0][1][0] <= _EFFECTIVE_MAX_GAP:
-                return found[0][0]
+    """Gültigkeitsdatum einer Änderung („gültig ab“, „mit Wirkung zum“ …).
+
+    Ausdrückliche Angaben aller Seiten haben Vorrang vor „ab dem …“. Nennen die
+    Angaben unterschiedliche Daten, ist das Datum nicht eindeutig -> ``None``
+    (lieber kein Hinweis als ein falscher).
+    """
+    flats = [normalize_ws(page.text) for page in text.pages]
+    for trigger, weak in ((_EFFECTIVE_TRIGGER, False), (_WEAK_EFFECTIVE_TRIGGER, True)):
+        found = [d for flat in flats for d in _trigger_dates(flat, trigger, weak=weak)]
+        if found:
+            distinct = set(found)
+            return found[0] if len(distinct) == 1 else None
     return None
 
 

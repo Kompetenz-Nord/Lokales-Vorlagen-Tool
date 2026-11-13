@@ -173,7 +173,7 @@ def test_validate_case_cross_field_rules():
     by_code = {m.code: m for m in msgs}
     assert by_code["DATE_ORDER_CONTRACT"].severity == Severity.ERROR  # beide bestätigt
     assert by_code["DATE_ORDER_EMPLOYMENT"].severity == Severity.WARNING
-    assert "PREMIUM_END_AFTER_END" in by_code
+    assert "DATE_ORDER_PREMIUM_END" in by_code
     assert "DATE_ORDER_BIRTH_START" not in by_code
     contract["contract.start_date"] = fv("contract.start_date", "1980-01-01")
     contract["contract.end_date"] = fv("contract.end_date", "2053-01-01")

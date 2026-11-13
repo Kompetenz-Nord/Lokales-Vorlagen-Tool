@@ -5,10 +5,14 @@
 * Die Datei wird atomar unter einem standardisierten Namen abgelegt.
 * Das Exportprotokoll (JSON Lines) enthält keine personenbezogenen Daten:
   Zeitpunkt, Vorgangs-ID, Vorlage, Dateiname, Fixierung, QA-Ergebnis, Prüfsumme.
+* Exportierte PDFs enthalten Personen- und Bankdaten: Auf POSIX-Systemen sind sie
+  nur für den eigenen Benutzer lesbar (``0600``). Der Standard-Exportordner der App
+  wird mit ``0700`` angelegt; einen selbst gewählten Ordner ändert die App nicht.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -29,6 +33,16 @@ __all__ = ["ExportBlockedError", "ExportLogEntry", "ExportResult", "Exporter"]
 log = logging.getLogger(__name__)
 
 _MAX_UNIQUE = 10_000
+_FILE_MODE = 0o600
+_DIR_MODE = 0o700
+
+
+def _make_private(path: Path, mode: int = _FILE_MODE) -> None:
+    """Rechte auf ``mode`` setzen (nur POSIX; Fehler werden ignoriert)."""
+    if os.name != "posix":
+        return
+    with contextlib.suppress(OSError):
+        os.chmod(path, mode)
 
 
 class ExportBlockedError(Exception):
@@ -70,9 +84,13 @@ def _sha256_file(path: Path) -> str:
 
 
 class Exporter:
-    def __init__(self, export_dir: Path, log_file: Path) -> None:
+    def __init__(self, export_dir: Path, log_file: Path, *, private_dir: bool = False) -> None:
+        """``private_dir=True``: Exportordner gehört der App (Standardordner) und wird auf
+        ``0700`` gesetzt. Ein vom Anwender gewählter Ordner (Standard ``False``) bleibt unverändert.
+        """
         self.export_dir = Path(export_dir)
         self.log_file = Path(log_file)
+        self.private_dir = private_dir
 
     def finalize(
         self,
@@ -110,10 +128,16 @@ class Exporter:
             template.short_title,
             safe_case,
         )
-        self.export_dir.mkdir(parents=True, exist_ok=True)
+        if self.private_dir:
+            self.export_dir.mkdir(parents=True, exist_ok=True, mode=_DIR_MODE)
+            _make_private(self.export_dir, _DIR_MODE)
+        else:
+            self.export_dir.mkdir(parents=True, exist_ok=True)
         dest = self._reserve(name)
         try:
+            _make_private(filled_tmp)  # Rechte vor dem Umbenennen setzen: kein lesbares Zeitfenster
             self._move(filled_tmp, dest)
+            _make_private(dest)
         except BaseException:
             dest.unlink(missing_ok=True)
             raise
@@ -140,7 +164,7 @@ class Exporter:
         for counter in range(1, _MAX_UNIQUE):
             candidate = self.export_dir / (name if counter == 1 else f"{stem}_{counter}{suffix}")
             try:
-                fd = os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+                fd = os.open(candidate, os.O_CREAT | os.O_EXCL | os.O_WRONLY, _FILE_MODE)
             except FileExistsError:
                 continue
             os.close(fd)
@@ -157,9 +181,12 @@ class Exporter:
             pass
         part = dest.with_name(dest.name + ".part")
         try:
-            shutil.copyfile(source, part)
-            with part.open("rb+") as fh:
-                os.fsync(fh.fileno())
+            part.unlink(missing_ok=True)
+            fd = os.open(part, os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_BINARY", 0), _FILE_MODE)
+            with os.fdopen(fd, "wb") as out, source.open("rb") as src:
+                shutil.copyfileobj(src, out, 1 << 20)
+                out.flush()
+                os.fsync(out.fileno())
             os.replace(part, dest)
         except BaseException:
             part.unlink(missing_ok=True)

@@ -125,13 +125,15 @@ def test_candidate_paths_per_platform(monkeypatch, tmp_path):
     assert tmp_path / "Programs" / "Ollama" / "ollama.exe" in status_mod._candidate_paths()
 
 
-def test_model_catalog_is_marked_unverified():
-    assert set(MODEL_CATALOG) == {"qwen3-vl:4b", "qwen3-vl:8b"}
+def test_model_catalog_verification_flags():
+    assert set(MODEL_CATALOG) >= {"qwen3-vl:4b", "qwen3-vl:8b", "glm-ocr", "gemma4:e4b"}
     for entry in MODEL_CATALOG.values():
-        assert entry.verified is False
-        assert entry.note == UNVERIFIED_NOTE
-        assert "ungeprüft" in entry.note
         assert entry.approx_download_gb > 0 and entry.min_ram_gb > 0
+        if entry.verified:  # Größe aus dem Ollama-Registry-Manifest gelesen
+            assert "Registry" in entry.note
+        else:
+            assert entry.note == UNVERIFIED_NOTE and "ungeprüft" in entry.note
+    assert MODEL_CATALOG["qwen3-vl:8b"].verified is False  # nicht aus der Registry geprüft
 
 
 def test_hardware_info(tmp_path, monkeypatch):
@@ -156,5 +158,5 @@ def test_check_model_requirements():
     assert any("Speicherplatz knapp" in h for h in hints)
     assert UNVERIFIED_NOTE in hints
     strong = HardwareInfo(total_ram_gb=64, free_disk_gb=500, cpu_count=8, platform="x", models_dir="m")
-    assert check_model_requirements("qwen3-vl:4b", strong) == [UNVERIFIED_NOTE]
+    assert check_model_requirements("qwen3-vl:4b", strong) == []  # Größe verifiziert -> kein Hinweis
     assert "keine Größenangaben" in check_model_requirements("llava", strong)[0]

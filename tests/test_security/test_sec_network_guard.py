@@ -239,3 +239,62 @@ def test_is_loopback_url(url, expected):
     else:
         with pytest.raises(NetworkBlockedError):
             assert_loopback_url(url)
+
+
+# ---------------------------------------------------------------------------
+# SEC-08: Rückwärtsauflösung (PTR) ohne DNS-Anfrage blockieren
+# ---------------------------------------------------------------------------
+
+
+def test_sec_08_reverse_lookups_of_remote_addresses_are_blocked(guard, monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setitem(ng._originals, "gethostbyaddr", lambda host, *a: calls.append(("addr", host)))
+    monkeypatch.setitem(
+        ng._originals,
+        "getnameinfo",
+        lambda sa, flags, *a: calls.append(("nameinfo", sa, flags)) or ("x", "80"),
+    )
+    started = time.monotonic()
+    with pytest.raises(NetworkBlockedError):
+        socket.gethostbyaddr("93.184.216.34")
+    with pytest.raises(NetworkBlockedError):
+        socket.gethostbyaddr("")
+    with pytest.raises(NetworkBlockedError):
+        socket.getnameinfo(("93.184.216.34", 80), 0)
+    with pytest.raises(NetworkBlockedError):
+        socket.getnameinfo(("2001:db8::1", 80, 0, 0), socket.NI_NAMEREQD)
+    # getfqdn ruft intern gethostbyaddr auf und gibt bei Fehler den Namen unverändert zurück
+    assert socket.getfqdn("93.184.216.34") == "93.184.216.34"
+    assert calls == []
+    assert time.monotonic() - started < 0.5
+
+
+def test_sec_08_loopback_numeric_and_allowed_reverse_lookups_pass(guard, monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setitem(ng._originals, "gethostbyaddr", lambda host, *a: calls.append(("addr", host)))
+    monkeypatch.setitem(
+        ng._originals, "getnameinfo", lambda sa, flags, *a: calls.append(("nameinfo", sa[0])) or ("x", "80")
+    )
+    socket.gethostbyaddr("127.0.0.1")
+    socket.gethostbyaddr("::1")
+    socket.getnameinfo(("127.0.0.1", 80), 0)
+    socket.getnameinfo(("93.184.216.34", 80), socket.NI_NUMERICHOST | socket.NI_NUMERICSERV)
+    with allow_network("Test: ausdrücklich freigegeben"):
+        socket.gethostbyaddr("93.184.216.34")
+    assert calls == [
+        ("addr", "127.0.0.1"),
+        ("addr", "::1"),
+        ("nameinfo", "127.0.0.1"),
+        ("nameinfo", "93.184.216.34"),
+        ("addr", "93.184.216.34"),
+    ]
+
+
+def test_sec_08_getnameinfo_is_restored_on_uninstall():
+    original = socket.getnameinfo
+    install_network_guard()
+    try:
+        assert socket.getnameinfo is not original
+    finally:
+        uninstall_network_guard()
+    assert socket.getnameinfo is original

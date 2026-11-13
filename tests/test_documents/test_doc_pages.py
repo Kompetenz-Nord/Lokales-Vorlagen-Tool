@@ -162,3 +162,54 @@ def test_source_sha256(tmp_path: Path):
         assert source.sha256 == hashlib.sha256(path.read_bytes()).hexdigest()
         assert source.is_pdf
         assert source.file_type == "pdf"
+
+
+# ---------------------------------------------------------------------------
+# PRIV-05: sehr große Bilder werden verkleinert, Koordinaten bleiben stimmig
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("mode", ["L", "RGB", "P", "1"])
+def test_priv_05_large_image_is_downscaled_with_consistent_dpi(tmp_path: Path, monkeypatch, mode):
+    import insurance_app.documents.pages as pages
+
+    monkeypatch.setattr(pages, "MAX_RENDER_PIXELS", 300_000)
+    img = text_image(["MUSTER – KEINE ECHTDATEN"], size_px=(1240, 1754)).convert(mode)
+    path = tmp_path / "gross.png"
+    path.write_bytes(png_bytes(img, dpi=(150, 150)))
+    with PageSource(path) as src:
+        rendered = src.render(1)
+        w_pt, h_pt = src.page_size_points(1)
+    assert rendered.mode == "RGB"
+    assert rendered.width * rendered.height <= 300_000
+    assert rendered.width < 1240
+    dpi = image_effective_dpi(rendered)
+    assert w_pt / rendered.width == pytest.approx(72 / dpi, rel=1e-9)
+    assert (w_pt, h_pt) == pytest.approx((1240 * 72 / 150, 1754 * 72 / 150), rel=1e-3)  # PNG: dpi gerundet
+    assert h_pt / rendered.height == pytest.approx(72 / rendered.info["dpi"][1], rel=1e-9)
+
+
+def test_priv_05_rotated_large_image_keeps_display_size(tmp_path: Path, monkeypatch):
+    import insurance_app.documents.pages as pages
+
+    monkeypatch.setattr(pages, "MAX_RENDER_PIXELS", 200_000)
+    img = text_image(["MUSTER"], size_px=(1200, 800))
+    exif = Image.Exif()
+    exif[274] = 6  # 90° im Uhrzeigersinn
+    path = tmp_path / "gedreht.jpg"
+    img.save(path, format="JPEG", dpi=(200, 100), exif=exif)
+    with PageSource(path) as src:
+        rendered = src.render(1)
+        w_pt, h_pt = src.page_size_points(1)
+    assert rendered.width < rendered.height  # Anzeigelage (hochkant)
+    assert rendered.width * rendered.height <= 200_000
+    assert w_pt / rendered.width == pytest.approx(72 / image_effective_dpi(rendered), rel=1e-9)
+    assert h_pt / rendered.height == pytest.approx(72 / rendered.info["dpi"][1], rel=1e-9)
+
+
+def test_priv_05_small_image_keeps_native_resolution(tmp_path: Path):
+    img = text_image(["MUSTER"], size_px=(400, 300))
+    path = tmp_path / "klein.png"
+    path.write_bytes(png_bytes(img, dpi=(150, 150)))
+    rendered = load_page_image(path, 1)
+    assert rendered.size == (400, 300) and image_effective_dpi(rendered) == pytest.approx(150, abs=0.05)

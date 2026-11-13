@@ -250,3 +250,34 @@ def test_status_report_tolerates_ocr_l_for_i():
         pages=[PageText(page_number=1, width=595, height=842, method=ExtractionMethod.PDF_TEXT, text=text)],
     )
     assert classify_document(doc).doc_type.value == "STATUS_REPORT"
+
+
+# EXT-14: Gültigkeitsdatum eines Nachtrags – ausdrückliche Angaben haben Vorrang
+def test_ext_14_explicit_trigger_wins_over_earlier_ab_dem():
+    text = (
+        "Nachtrag zum Versicherungsschein\n"
+        "Die Beiträge sind ab dem 01.02.2022 monatlich fällig.\n"
+        "Die Änderung ist gültig ab 01.07.2025.\n"
+    )
+    assert classify_document(doc(f"{MUSTER}\n{text}")).effective_date == date(2025, 7, 1)
+
+
+def test_ext_14_explicit_trigger_on_later_page_wins():
+    first = f"{MUSTER}\nNachtrag zum Versicherungsschein\nDie Beiträge sind ab dem 01.02.2022 fällig."
+    second = f"{MUSTER}\nDie Änderung ist gültig ab 01.07.2025."
+    assert classify_document(doc(first, second)).effective_date == date(2025, 7, 1)
+
+
+def test_ext_14_due_date_sentence_is_no_effective_date():
+    text = "Nachtrag\nDie Beiträge sind ab dem 01.02.2022 monatlich fällig."
+    assert classify_document(doc(f"{MUSTER}\n{text}")).effective_date is None
+
+
+def test_ext_14_new_premium_ab_dem_still_counts():
+    text = "Ihr neuer Beitrag ab dem 01.01.2025 beträgt 123,45 EUR. Er ist monatlich fällig."
+    assert classify_document(doc(f"{MUSTER}\n{text}")).effective_date == date(2025, 1, 1)
+
+
+def test_ext_14_contradicting_explicit_dates_give_no_hint():
+    text = "Nachtrag\nDie Änderung ist gültig ab 01.07.2025.\nwirksam ab 01.01.2026"
+    assert classify_document(doc(f"{MUSTER}\n{text}")).effective_date is None

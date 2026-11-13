@@ -33,18 +33,22 @@ from insurance_app.core.models import (
     TextLayerOrigin,
     Word,
 )
-from insurance_app.core.textutil import find_dates, normalize_ws, truncate
+from insurance_app.core.textutil import find_dates, fold, format_date_de, normalize_ws, truncate
 
 from .layout import LAYOUT_CONFIDENCE, LayoutMatch, Line, estimate_skew, find_label_values, group_lines
 from .normalize import (
     NOTE_UNREADABLE,
+    compact_key,
     frequency_from_text,
+    is_reference,
     normalize_amount,
+    normalize_country,
     normalize_iban,
     normalize_value,
     split_person_name,
     split_postal_city,
     split_street_house,
+    to_nfc,
 )
 from .rules import (
     BANK_FIELDS,
@@ -100,6 +104,8 @@ class ExtractionResult(BaseModel):
     candidates: dict[str, list[Candidate]] = Field(default_factory=dict)
     placeholders: dict[str, list[Evidence]] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
+    #: IBANs, die erkennbar zum Versicherer gehören (Fußzeile, Briefkopf, „Unsere Bankverbindung“)
+    insurer_ibans: list[str] = Field(default_factory=list)
 
     def best(self, key: str) -> Candidate | None:
         """Kandidat mit der höchsten Konfidenz (oder ``None``)."""
@@ -134,17 +140,85 @@ def _overlaps_y(y0: float, y1: float, ranges: list[tuple[float, float]], tol: fl
     return any(y0 <= r1 + tol and y1 >= r0 - tol for r0, r1 in ranges)
 
 
+# Unbekannte, längere Beschriftung hinter einem kurzen Label („Ablauf der Aufschubzeit: …“)
+_TAIL_ARTICLES = {"der", "des", "dem", "den", "die", "das"}
+_TAIL_PREPOSITIONS = {"zum", "zur", "fuer", "bei", "nach", "laut", "gemaess"}
+_CURRENCY_WORDS = {"eur", "euro", "€"}
+
+
+def _qualified_label_tail(value: str) -> bool:
+    """Ist ein eng anschließender Wert in Wahrheit der Rest einer unbekannten Beschriftung?
+
+    * beginnt mit einem Artikel („der Aufschubzeit …“, „des Zahlungsempfängers …“)
+    * beginnt mit einer Präposition und einem Wort ohne Ziffer („zur Rentengarantiezeit …“)
+    * enthält einen Doppelpunkt, davor stehen nur Wörter ohne Ziffer mit mindestens
+      einem Hauptwort („Aufschubzeit: …“) – „ab 01.07.2025: …“ und „monatlich: …“ bleiben gültig
+    """
+    tokens = value.split()
+    if not tokens:
+        return False
+    first = fold(tokens[0]).strip(".,:;()")
+    if first in _TAIL_ARTICLES:
+        return True
+    if first in _TAIL_PREPOSITIONS and len(tokens) > 1 and not re.search(r"\d", tokens[1]):
+        return True
+    head, sep, _ = value.partition(":")
+    if sep and head.strip() and not re.search(r"\d", head):
+        words = [w.strip(".,;()") for w in head.split()]
+        return any(w[:1].isupper() and fold(w) not in _CURRENCY_WORDS for w in words if w)
+    return False
+
+
+def _name_order(label: str) -> str | None:
+    """Reihenfolge laut Beschriftung: „Name, Vorname“ -> ``last_first``, „Vorname Name“ -> ``first_last``."""
+    words = [w for w in re.split(r"[^a-z]+", fold(label)) if w]
+    if "vorname" not in words:
+        return None
+    first_idx = words.index("vorname")
+    last_idx = next((i for i, w in enumerate(words) if w in ("name", "nachname", "familienname")), None)
+    if last_idx is None:
+        return None
+    return "last_first" if last_idx < first_idx else "first_last"
+
+
+_INSURER_BANK_CONTEXT = re.compile(r"unser|zahlungsempfaenger|gesellschaft|versicherer|empfaenger")
+
+
 _ADDRESS_POSTAL = re.compile(r"(?:^|[,;\s])(?:(?:D|DE)\s?-\s?)?(\d{5})\s+(\S.*)$")
+
+
+def _country_code(text: str) -> str | None:
+    """ISO-Code, wenn der Text nur ein bekanntes Land nennt („Deutschland“ -> „DE“)."""
+    code = normalize_country(text)
+    return (
+        code if code is not None and re.fullmatch(r"[A-Z]{2}", code) and len(compact_key(text)) > 2 else None
+    )
+
+
+def _split_country(city: str) -> tuple[str, str | None]:
+    """„Musterstadt, Deutschland“ -> („Musterstadt“, „Deutschland“)."""
+    head, sep, tail = city.rpartition(",")
+    if sep and head.strip() and _country_code(tail.strip()):
+        return head.strip(" ,;"), tail.strip()
+    return city, None
 
 
 def _parse_address(text: str) -> dict[str, str | None]:
     text = normalize_ws(text).strip(" ,;")
-    out: dict[str, str | None] = {"street": None, "house_number": None, "postal_code": None, "city": None}
+    out: dict[str, str | None] = {
+        "street": None,
+        "house_number": None,
+        "postal_code": None,
+        "city": None,
+        "country": None,
+    }
     m = _ADDRESS_POSTAL.search(text)
     street_part = text
     if m:
         out["postal_code"] = m.group(1)
-        out["city"] = m.group(2).strip(" ,;") or None
+        city, country = _split_country(m.group(2).strip(" ,;"))
+        out["city"] = city or None
+        out["country"] = country
         street_part = text[: m.start()].strip(" ,;")
     if street_part:
         street, house = split_street_house(street_part)
@@ -192,7 +266,7 @@ class _DocExtractor:
         fdef = FIELD_REGISTRY.get(key)
         if fdef is None or fdef.category != FieldCategory.CONTRACT or not fdef.extractable:
             return  # Auftragsdaten nie automatisch
-        raw = normalize_ws(raw or "")
+        raw = to_nfc(normalize_ws(raw or ""))
         if not raw and normalized is None:
             return
         if normalized is None:
@@ -240,8 +314,11 @@ class _DocExtractor:
 
     def _collect_insurer_ibans(self, page: PageText, lines: list[Line], creditor: list[tuple[float, float]]):
         for line in lines:
-            in_letterhead = in_footer(page, line.bbox.y0) or _overlaps_y(
-                line.bbox.y0, line.bbox.y1, creditor, 0
+            in_letterhead = (
+                in_footer(page, line.bbox.y0)
+                or in_header(page, line.bbox.y1)
+                or _overlaps_y(line.bbox.y0, line.bbox.y1, creditor, 0)
+                or "unsere bankverbindung" in fold(line.text)
             )
             if not in_letterhead:
                 continue
@@ -249,6 +326,24 @@ class _DocExtractor:
                 iban = normalize_iban(m.group(0))
                 if iban:
                     self.insurer_ibans.add(iban)
+
+    @staticmethod
+    def _text_before(lines: list[Line], box) -> str:
+        """Wörter direkt links vor einer Box im selben Zeilensegment (z. B. „Unsere“ vor „Bankverbindung“)."""
+        for line in lines:
+            if not (line.bbox.y0 <= box.y1 and line.bbox.y1 >= box.y0):
+                continue
+            left = [w for w in line.words if w.bbox.x1 <= box.x0 + 0.5]
+            taken: list[str] = []
+            edge = box.x0
+            for w in reversed(left):
+                if edge - w.bbox.x1 > 1.5 * max(w.bbox.height, 1.0):
+                    break  # andere Spalte
+                taken.append(w.text)
+                edge = w.bbox.x0
+            if taken:
+                return " ".join(reversed(taken))
+        return ""
 
     def _bank_allowed(
         self, page: PageText, lines: list[Line], creditor: list[tuple[float, float]], m: LayoutMatch
@@ -260,10 +355,14 @@ class _DocExtractor:
             if _overlaps_y(box.y0, box.y1, creditor, 1.0):
                 return False
             if in_header(page, box.y1):
-                for line in lines:
-                    if line.bbox.y0 <= box.y1 and line.bbox.y1 >= box.y0 and "BIC" in line.text.upper():
-                        return False
-        return True
+                return False  # Briefkopf: Bankverbindung des Versicherers
+        # „Unsere Bankverbindung“, „Bankverbindung des Zahlungsempfängers“ …
+        if _INSURER_BANK_CONTEXT.search(fold(self._text_before(lines, m.label_bbox))):
+            return False
+        # Allgemeines „Bankverbindung“ im Infoblock rechts oben (DIN 5008) gehört zum Absender
+        generic = compact_key(m.label_text) == "bankverbindung" or m.section == "Bankverbindung"
+        in_info_block = m.label_bbox.x0 >= 0.5 * page.width and m.label_bbox.y1 <= 0.4 * page.height
+        return not (generic and in_info_block)
 
     def _convert(
         self,
@@ -276,6 +375,10 @@ class _DocExtractor:
         key = m.field_key
         if key in BANK_FIELDS and not self._bank_allowed(page, lines, creditor, m):
             self._bank_dropped_pages.add(page.page_number)
+            if key == "bank.iban":
+                iban = normalize_iban(m.value_text)
+                if iban:
+                    self.insurer_ibans.add(iban)  # auch in anderen Dokumenten nicht als Kunden-IBAN nehmen
             return
         if m.placeholder:
             quote = f"{m.label_text} {m.placeholder_text or ''}".strip()
@@ -287,6 +390,15 @@ class _DocExtractor:
             return
         if m.tight and not _is_structured(key):
             return  # Fließtext ohne Trennzeichen: nur eindeutig strukturierte Werte übernehmen
+        if m.tight and _qualified_label_tail(m.value_text):
+            return  # unbekannte längere Beschriftung, z. B. „Ablauf der Aufschubzeit: …“
+        if not _is_structured(key) and is_reference(m.value_text):
+            # „wie Versicherungsnehmer“, „siehe oben“: kein eigener Wert -> als Platzhalter belegen
+            ev = self._evidence(page, m)
+            for member in _members(key):
+                if member not in ("policyholder.salutation", "policyholder.legal_form"):
+                    self.placeholders.setdefault(member, []).append(ev)
+            return
         words = m.value_words + (m.continuation_words if key.endswith(".address") else [])
         wc = _word_confidence(words)
         base = m.confidence * (wc if wc is not None else 1.0) * ocr_factor
@@ -294,7 +406,7 @@ class _DocExtractor:
         value = m.value_text
 
         if key in ("policyholder", "insured"):
-            self._person(key, value, base, ev)
+            self._person(key, value, base, ev, order=_name_order(m.label_text))
         elif key.endswith(".address"):
             self._address(key.split(".")[0], value, m.continuation_text, base, ev)
         elif key.endswith(".postal_city"):
@@ -318,12 +430,12 @@ class _DocExtractor:
                 return
             self._add(key, value, normalized, base, ev, note)
 
-    def _person(self, key: str, value: str, base: float, ev: Evidence) -> None:
-        split = split_person_name(value)
+    def _person(self, key: str, value: str, base: float, ev: Evidence, order: str | None = None) -> None:
+        split = split_person_name(value, order=order)
         conf = base * split.confidence
         if key == "policyholder":
             if split.is_company:
-                self._add_simple("policyholder.name", value, base * 0.9, ev)
+                self._add_simple("policyholder.name", split.last or value, base * 0.9, ev)
                 if split.legal_form:
                     self._add_simple("policyholder.legal_form", split.legal_form, base * 0.8, ev)
                 return
@@ -337,8 +449,14 @@ class _DocExtractor:
                 self._add_simple("policyholder.salutation", split.salutation, base * 0.8, ev)
             return
         if split.is_company:
-            self._add_simple("insured.last_name", value, base * 0.3, ev, NOTE_COMPANY_AS_INSURED)
+            self._add_simple(
+                "insured.last_name", split.last or value, base * 0.3, ev, NOTE_COMPANY_AS_INSURED
+            )
             return
+        if split.birth_date:
+            # „Max Mustermann, geb. 12.03.1980“: das abgetrennte Geburtsdatum ist ein eigener Beleg
+            shown = format_date_de(date.fromisoformat(split.birth_date))
+            self._add("insured.birth_date", shown, split.birth_date, base * 0.8, ev)
         if not split.last:
             self._add("insured.last_name", value, None, base, ev)
             return
@@ -347,11 +465,19 @@ class _DocExtractor:
             self._add_simple("insured.first_name", split.first, conf, ev, split.note)
 
     def _address(self, prefix: str, value: str, continuation: str | None, base: float, ev: Evidence) -> None:
+        country_raw: str | None = None
+        if continuation:
+            if _country_code(continuation):
+                country_raw, continuation = continuation, None  # „Deutschland“ gehört nicht zum Ort
+            elif _ADDRESS_POSTAL.search(normalize_ws(value)):
+                continuation = None  # Anschrift ist bereits vollständig (PLZ und Ort vorhanden)
         text = value if not continuation else f"{value}, {continuation}"
         parts = _parse_address(text)
         if not parts["street"] and not parts["postal_code"]:
             self._add(f"{prefix}.street", value, None, base, ev)
             return
+        if country_raw and not parts["country"]:
+            parts["country"] = country_raw
         for part, raw in parts.items():
             if raw:
                 self._add_simple(f"{prefix}.{part}", raw, base, ev)
@@ -389,7 +515,7 @@ class _DocExtractor:
             kept = [c for c in self.candidates["bank.iban"] if c.normalized not in self.insurer_ibans]
             if len(kept) != len(self.candidates["bank.iban"]):
                 self.warnings.append(
-                    "Eine IBAN entspricht der Bankverbindung des Versicherers (Fußzeile) und wurde nicht übernommen."
+                    "Eine IBAN entspricht der Bankverbindung des Versicherers und wurde nicht übernommen."
                 )
             self.candidates["bank.iban"] = kept
         for page_no in sorted(self._bank_dropped_pages):
@@ -407,7 +533,12 @@ class _DocExtractor:
             if best:
                 deduped[key] = sorted(best.values(), key=lambda c: -(c.confidence or 0.0))
         placeholders = {k: v for k, v in self.placeholders.items() if k not in deduped}
-        return ExtractionResult(candidates=deduped, placeholders=placeholders, warnings=self.warnings)
+        return ExtractionResult(
+            candidates=deduped,
+            placeholders=placeholders,
+            warnings=self.warnings,
+            insurer_ibans=sorted(self.insurer_ibans),
+        )
 
 
 def extract_candidates(doc_text: DocumentText, info: SourceDocInfo) -> ExtractionResult:

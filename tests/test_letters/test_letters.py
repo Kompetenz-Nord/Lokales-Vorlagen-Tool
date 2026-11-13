@@ -354,3 +354,136 @@ def test_multipage_letter_has_page_numbers_and_form_a(tmp_path: Path):
     assert res.page_count >= 2 and res.form == "A"
     doc = pymupdf.open(tmp_path / "long.pdf")
     assert "Seite 1 von" in doc[0].get_text()
+
+
+# ---------------------------------------------------------------------------
+# Regressionen (geprüfte Fehlerberichte)
+# ---------------------------------------------------------------------------
+
+
+def _na(key: str) -> FieldValue:
+    return FieldValue(key=key, status=FieldStatus.NOT_APPLICABLE)
+
+
+def test_legal_1_not_applicable_legal_choice_is_no_decision():
+    _, plan = plan_for(
+        "kuendigung_ordentlich",
+        [
+            _na("order.termination_timing"),
+            m("order.revoke_sepa", "nein", "false"),
+            m("order.payout_to_account", "nein", "false"),
+        ],
+    )
+    assert plan.blocking
+    item = next(i for i in plan.checklist if i.field_key == "order.termination_timing")
+    assert item.code == "DECISION_REQUIRED" and item.blocking
+    assert "„nicht relevant“ ist hier keine Entscheidung" in item.message
+    assert "kündige ich" not in plan.printed_text()  # ohne Entscheidung keine Kündigungserklärung
+
+
+def test_legal_1_not_applicable_special_reason_and_bool_block():
+    _, plan = plan_for(
+        "kuendigung_ausserordentlich",
+        [
+            _na("order.special_reason"),
+            _na("order.revoke_sepa"),
+            m("order.termination_timing", "next_possible"),
+            m("order.payout_to_account", "nein", "false"),
+            m("order.legal_basis_confirmed", "ja", "true"),
+            _na("order.legal_basis_text"),  # Textfeld: „nicht relevant“ bleibt zulässig
+        ],
+    )
+    blocking = {(i.code, i.field_key) for i in plan.checklist if i.blocking}
+    assert ("DECISION_REQUIRED", "order.special_reason") in blocking
+    assert ("DECISION_REQUIRED", "order.revoke_sepa") in blocking
+    assert not any(k == "order.legal_basis_text" for _, k in blocking)
+    assert "außerordentlich" not in " ".join(b.text for b in plan.blocks)
+
+
+@pytest.mark.parametrize("timing", ["date", "next_possible", "increase_effective"])
+def test_legal_5_special_termination_has_ordinary_fallback(timing):
+    order = [
+        m("order.special_reason", "premium_increase"),
+        m("order.insurer_notice_date", "01.11.2026", "2026-11-01"),
+        m("order.termination_timing", timing),
+        m("order.desired_date", "31.12.2026", "2026-12-31"),
+        m("order.revoke_sepa", "nein", "false"),
+        m("order.payout_to_account", "nein", "false"),
+        m("order.legal_basis_confirmed", "ja", "true"),
+        m("order.legal_basis_text", "§ 40 VVG"),
+    ]
+    _, plan = plan_for("kuendigung_ausserordentlich", order)
+    assert not plan.blocking, plan.checklist
+    texts = [b.text for b in plan.blocks]
+    fallback = "Hilfsweise kündige ich den Vertrag ordentlich zum nächstmöglichen Zeitpunkt."
+    assert fallback in texts
+    main = next(i for i, t in enumerate(texts) if "außerordentlich" in t)
+    assert texts.index(fallback) > main
+    assert any("§ 205 Abs. 6 VVG" in (h.source or "") for h in plan.hints)
+
+
+def test_legal_8_surrender_value_hint_is_not_absolute():
+    t = load_letter_template(LETTERS / "kuendigung_ordentlich.json")
+    hint = next(h for h in t.hints if "§ 169 VVG" in (h.source or ""))
+    assert "wird bei Kündigung der Rückkaufswert fällig" not in hint.text
+    assert "Hat der Vertrag einen Rückkaufswert" in hint.text
+    assert "unter den eingezahlten Beiträgen" in hint.text
+    assert "Basisrente" in hint.text and "ausgeschlossen" in hint.text
+
+
+def _ready_ordinary(extra: list[FieldValue] | None = None):
+    return plan_for(
+        "kuendigung_ordentlich",
+        [
+            m("order.termination_timing", "next_possible"),
+            m("order.revoke_sepa", "nein", "false"),
+            m("order.payout_to_account", "nein", "false"),
+            *(extra or []),
+        ],
+    )
+
+
+def test_svc_14_brace_in_user_value_does_not_fail_letter_qa(tmp_path: Path):
+    from insurance_app.letters.qa import has_unresolved_marks, run_letter_qa
+
+    _, plan = _ready_ordinary([m("order.recipient_department", "Kundenservice {Leben}")])
+    assert not plan.blocking, plan.checklist
+    out = tmp_path / "brief.pdf"
+    render_letter(plan, out, FONTS, preview=False)
+    report = run_letter_qa(plan, out, final=True, renderers=("mupdf",))
+    check = next(c for c in report.checks if c.code == "NO_PLACEHOLDERS")
+    assert check.passed, check.message
+    assert not has_unresolved_marks("Abt. {K} – Kundenservice {Leben}")
+    assert has_unresolved_marks("zum {order.desired_date|date}")
+    assert has_unresolved_marks("Text {@timing_phrase}")
+    assert has_unresolved_marks("[Fehlt: Datum]")
+
+
+def test_svc_14_unresolved_placeholder_still_fails_letter_qa(tmp_path: Path):
+    from insurance_app.letters.qa import run_letter_qa
+
+    _, plan = _ready_ordinary()
+    plan.blocks[0].text += " {order.desired_date|date}"
+    out = tmp_path / "brief.pdf"
+    render_letter(plan, out, FONTS, preview=False)
+    report = run_letter_qa(plan, out, final=True, renderers=("mupdf",))
+    assert not next(c for c in report.checks if c.code == "NO_PLACEHOLDERS").passed
+    assert not report.passed
+
+
+def test_svc_15_unknown_letter_form_is_rejected_consistently(tmp_path: Path):
+    from insurance_app.letters.din5008 import FORM_A, FORM_B, din_layout
+    from insurance_app.letters.qa import run_letter_qa
+
+    assert din_layout("B") is FORM_B and din_layout(" a ") is FORM_A and din_layout("b") is FORM_B
+    _, plan = _ready_ordinary()
+    out = tmp_path / "brief.pdf"
+    for bad in ("C", "Form B", ""):
+        with pytest.raises(ValueError, match="Briefform"):
+            render_letter(plan, out, FONTS, preview=False, form=bad)  # type: ignore[arg-type]
+    assert not out.exists()
+    render_letter(plan, out, FONTS, preview=False, form="b")  # type: ignore[arg-type]
+    with pytest.raises(ValueError, match="Briefform"):
+        run_letter_qa(plan, out, final=True, form="C", renderers=("mupdf",))
+    report = run_letter_qa(plan, out, final=True, form="b", renderers=("mupdf",))
+    assert next(c for c in report.checks if c.code == "ADDRESS_IN_WINDOW").passed

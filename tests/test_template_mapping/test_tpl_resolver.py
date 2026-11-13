@@ -149,7 +149,9 @@ def _pep_template():
             pdf_field="Optional",
             label="Optional",
             kind=MappingKind.TEXT,
-            source="order.measure",
+            # nicht rechtlich relevante Quelle: rechtlich relevante Registerfelder
+            # (z. B. order.measure) gelten seit LEGAL-2 auch ohne Zuordnungs-Kennzeichen als Pflicht
+            source="contract.tariff",
             conditions=[Condition(field="order.reason")],
         ),
     )
@@ -179,8 +181,24 @@ def test_met_condition_requires_value():
 
 
 def test_not_applicable_condition_field_is_unmet():
+    # Nicht rechtlich relevantes Bedingungsfeld: „nicht relevant“ = Bedingung nicht erfüllt.
+    m = FieldMapping(
+        pdf_field="Inst",
+        label="Geldinstitut",
+        kind=MappingKind.TEXT,
+        source="order.payment_institution",
+        required=True,
+        conditions=[Condition(field="contract.tariff")],
+    )
+    plan = resolve(template(m), [fv("contract.tariff", None, status=FieldStatus.NOT_APPLICABLE)])
+    assert plan.checklist == [] and plan.values == []
+
+
+def test_pdf_1_not_applicable_on_legal_condition_field_is_undecided():
+    # Rechtliche Auswahl (PeP) als „nicht relevant“ markiert: keine Entscheidung -> blockiert.
     plan = resolve(_pep_template(), [fv("order.pep_status", None, status=FieldStatus.NOT_APPLICABLE)])
-    assert plan.checklist == []
+    items = [i for i in plan.checklist if i.blocking]
+    assert [(i.code, i.field_key) for i in items] == [("CONDITION_UNDECIDED", "order.pep_status")]
 
 
 def test_in_condition():
@@ -728,3 +746,194 @@ def test_checklist_never_contains_personal_values():
     for item in plan.checklist:
         for value in PERSONAL_VALUES:
             assert value not in item.message, (value, item.message)
+
+
+# ---------------------------------------------------------------------------
+# Regressionen: „nicht relevant“ bei rechtlichen Auswahlen, Registerkennzeichen, ODER-Bedingungen
+# ---------------------------------------------------------------------------
+
+
+def _na(key: str):
+    return fv(key, None, status=FieldStatus.NOT_APPLICABLE)
+
+
+def test_pdf_1_not_applicable_legal_choices_block_sl18477():
+    t = load_template("swisslife_sl18477.json")
+    decided = {"order.continuation_mode", "order.pep_status", "order.payment_method"}
+    values = [v for v in sl18477_private() if v.key not in decided]
+    plan = resolve(t, [*values, *(_na(k) for k in decided)])
+    assert plan.blocking
+    legal = {i.field_key for i in plan.checklist if i.code == "LEGAL_DECISION_MISSING" and i.blocking}
+    assert decided <= legal
+    item = next(i for i in plan.checklist if i.field_key == "order.pep_status")
+    assert "„nicht relevant“ ist hier keine Entscheidung" in item.message
+    assert plan.value_for("politisch exponierte Person") is None
+    assert plan.value_for("Beitragszahlung") is None
+
+
+def test_legal_1_not_applicable_checkboxes_block_sl13065():
+    t = load_template("swisslife_sl13065.json")
+    keys = {"order.severance_consent", "order.waive_refund"}
+    values = [v for v in sl13065_values() if v.key not in keys]
+    plan = resolve(t, [*values, *(_na(k) for k in keys)])
+    blocking = {(i.code, i.field_key) for i in plan.checklist if i.blocking}
+    assert blocking == {("LEGAL_DECISION_MISSING", k) for k in keys}
+    assert plan.value_for("Abfindung") is None and plan.value_for("Rückerstattung") is None
+
+
+def test_legal_1_not_applicable_stays_valid_for_legal_text_and_amount_fields():
+    m = FieldMapping(
+        pdf_field="Amt",
+        label="Amt",
+        kind=MappingKind.TEXT,
+        source="order.pep_office",
+        required=True,
+        legal_relevant=True,
+    )
+    assert resolve(template(m), [_na("order.pep_office")]).checklist == []
+    assert resolve(template(AMOUNT), [_na("order.reduced_premium_amount")]).checklist == []
+
+
+def test_legal_1_not_applicable_in_compose_and_acknowledgment():
+    m = FieldMapping(
+        pdf_field="Text",
+        label="Text",
+        kind=MappingKind.TEXT,
+        compose="{contract.number} {order.severance_consent?}",
+    )
+    plan = resolve(template(m), [fv("contract.number", "MUSTER-4711"), _na("order.severance_consent")])
+    assert codes(plan, blocking=True) == ["LEGAL_DECISION_MISSING"] and plan.values == []
+    ack = Acknowledgment(
+        field="order.advice_waiver_acknowledged",
+        text="Beratungsverzicht besprochen",
+        conditions=[Condition(field="order.continuation_mode", equals="private")],
+    )
+    plan = resolve(template(acks=[ack]), [_na("order.continuation_mode")])
+    assert codes(plan, blocking=True) == ["CONDITION_UNDECIDED"]
+
+
+def test_legal_2_registry_legal_source_without_mapping_flag_needs_decision():
+    # Importierte Zuordnung ohne legal_relevant/required: Register entscheidet trotzdem.
+    m = FieldMapping(
+        pdf_field="Rückerstattung",
+        label="Rückerstattung",
+        kind=MappingKind.CHECKBOX,
+        source="order.waive_refund",
+    )
+    plan = resolve(template(m), [])
+    assert codes(plan, blocking=True) == ["LEGAL_DECISION_MISSING"]
+    assert codes(resolve(template(m), [_na("order.waive_refund")]), blocking=True) == [
+        "LEGAL_DECISION_MISSING"
+    ]
+    ok = resolve(template(m), [manual("order.waive_refund", "false")])
+    assert not ok.blocking and ok.value_for("Rückerstattung").state == "Off"
+
+
+def test_legal_2_registry_legal_manual_only_and_compose_block():
+    m = FieldMapping(
+        pdf_field="IBAN",
+        label="IBAN",
+        kind=MappingKind.TEXT,
+        source="order.payment_iban",
+        fill_policy=FillPolicy.MANUAL_ONLY,
+    )
+    plan = resolve(template(m), [fv("order.payment_iban", "DE89370400440532013000")])
+    assert codes(plan, blocking=True) == ["MANUAL_ENTRY_REQUIRED"]
+    composed = FieldMapping(
+        pdf_field="Bezug", label="Bezug", kind=MappingKind.TEXT, compose="{order.pep_office}"
+    )
+    plan = resolve(template(composed), [])
+    assert codes(plan, blocking=True) == ["REQUIRED_MISSING"]
+
+
+def _interim(paying: bool = True) -> list:
+    values = [v for v in sl18477_employer() if v.key != "order.interim_private_continuation"]
+    values.append(manual("order.interim_private_continuation", "true"))
+    values.append(manual("order.interim_contribution_option", "paying" if paying else "exempt"))
+    if paying:
+        values.append(manual("order.interim_premium_amount", "50.00"))
+    return values
+
+
+C_PERSON_FIELDS = [
+    "Name Vorname",
+    "Datum 3.1",
+    "Datum 3.21",
+    "Datum 3.32",
+    "Straße Hausnummer 1",
+    "Postleitzahl 1",
+    "Ort 1",
+    "Geburtsort",
+    "Stattsangehörigkeit",
+]
+
+
+def test_legal_4_interim_private_continuation_fills_section_c_person_data():
+    t = load_template("swisslife_sl18477.json")
+    plan = resolve(t, _interim())
+    assert not plan.blocking, plan.blocking_items
+    assert all(plan.value_for(f) is not None for f in C_PERSON_FIELDS)
+    assert plan.value_for("Name Vorname").text == "Musterfrau, Erika"
+    assert plan.value_for("Versicherung durch die versicherte Person").state == "Off"
+    assert plan.value_for("Fortführung der Versicherung") is None  # C-Beitragsvariante nur bei privat
+    assert any("Zwischenzeitraum" in n and "Swiss Life" in n for n in t.notes)
+
+
+def test_legal_4_interim_person_data_is_required():
+    t = load_template("swisslife_sl18477.json")
+    values = [v for v in _interim() if v.key != "insured.birth_place"]
+    plan = resolve(t, values)
+    item = next(i for i in plan.blocking_items if i.field_key == "insured.birth_place")
+    assert item.code == "REQUIRED_MISSING" and item.pdf_field == "Geburtsort"
+
+
+def test_legal_4_no_interim_and_undecided_alternatives():
+    t = load_template("swisslife_sl18477.json")
+    plan = resolve(t, sl18477_employer())  # interim = false
+    assert all(plan.value_for(f) is None for f in C_PERSON_FIELDS) and not plan.blocking
+    # Fortführung durch AG, Zwischenzeitraum noch offen -> blockiert (eine Meldung je Feld)
+    values = [v for v in sl18477_employer() if v.key != "order.interim_private_continuation"]
+    plan = resolve(t, values)
+    items = [i for i in plan.blocking_items if i.field_key == "order.interim_private_continuation"]
+    assert len(items) == 1 and items[0].code == "LEGAL_DECISION_MISSING"
+    assert all(plan.value_for(f) is None for f in C_PERSON_FIELDS)
+
+
+def test_legal_4_any_conditions_semantics():
+    m = FieldMapping(
+        pdf_field="Name",
+        label="Name",
+        kind=MappingKind.TEXT,
+        source="insured.last_name",
+        required=True,
+        conditions=[Condition(field="order.payment_method", equals="sepa")],
+        any_conditions=[
+            Condition(field="order.continuation_mode", equals="private"),
+            Condition(field="order.interim_private_continuation", equals="true"),
+        ],
+    )
+    name = fv("insured.last_name", "Musterfrau")
+    sepa = manual("order.payment_method", "sepa")
+    # UND-Bedingung nicht erfüllt -> unabhängig von ODER irrelevant
+    plan = resolve(template(m), [name, manual("order.payment_method", "transfer")])
+    assert plan.values == [] and plan.checklist == []
+    # eine Alternative erfüllt, die andere offen -> erfüllt
+    plan = resolve(template(m), [name, sepa, manual("order.interim_private_continuation", "true")])
+    assert plan.value_for("Name").text == "Musterfrau" and not plan.blocking
+    # keine Alternative erfüllt -> nicht relevant
+    plan = resolve(
+        template(m),
+        [
+            name,
+            sepa,
+            manual("order.continuation_mode", "employer"),
+            manual("order.interim_private_continuation", "false"),
+        ],
+    )
+    assert plan.values == [] and plan.checklist == []
+    # alle offen -> nur die erste offene Alternative wird gemeldet
+    plan = resolve(template(m), [name, sepa])
+    assert [(i.code, i.field_key) for i in plan.checklist] == [
+        ("CONDITION_UNDECIDED", "order.continuation_mode")
+    ]
+    assert "order.interim_private_continuation" in template(m).source_keys()

@@ -49,7 +49,6 @@ from insurance_app.core.models import (  # noqa: E402
     ClassificationResult,
     DocumentCheckResult,
     DocumentText,
-    DocumentType,
     FieldStatus,
     FieldValue,
     TextLayerOrigin,
@@ -57,7 +56,11 @@ from insurance_app.core.models import (  # noqa: E402
 from insurance_app.core.settings import Settings  # noqa: E402
 from insurance_app.documents.classify import classify_document  # noqa: E402
 from insurance_app.documents.intake import check_document  # noqa: E402
-from insurance_app.extraction.extractor import ExtractionResult, SourceDocInfo, extract_candidates  # noqa: E402
+from insurance_app.extraction.extractor import (  # noqa: E402
+    ExtractionResult,
+    SourceDocInfo,
+    extract_candidates,
+)
 from insurance_app.extraction.merge import MergeOutcome, merge_candidates  # noqa: E402
 from insurance_app.local_ai.benchmark import compare_methods, values_equal  # noqa: E402
 from insurance_app.ocr.service import TextRecognitionService  # noqa: E402
@@ -255,7 +258,9 @@ class DocResult:
     conflict: int = 0
     conflict_with_truth: int = 0
     runtime_s: float = 0.0
+    runtime_runs: list[float] = field(default_factory=list)  # Laufzeit je Wiederholung (s)
     peak_rss_mb: float | None = None
+    start_rss_mb: float | None = None  # vor der Datei (zeigt, was frühere Dateien belegt lassen)
     engines: list[str] = field(default_factory=list)
     fields: dict[str, dict[str, Any]] = field(default_factory=dict)
     error: str | None = None
@@ -304,6 +309,7 @@ class PeakMemorySampler:
         self.interval = interval
         self.enabled = enabled
         self.peak_bytes: int | None = None
+        self.start_bytes: int | None = None
         self.mode = "aus"
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -337,7 +343,7 @@ class PeakMemorySampler:
     def __enter__(self) -> PeakMemorySampler:
         if self.mode == "psutil":
             with contextlib.suppress(Exception):
-                self.peak_bytes = self._sample()
+                self.start_bytes = self.peak_bytes = self._sample()
             self._thread = threading.Thread(target=self._loop, name="bench-mem", daemon=True)
             self._thread.start()
         return self
@@ -352,6 +358,11 @@ class PeakMemorySampler:
     @property
     def peak_mb(self) -> float | None:
         return None if self.peak_bytes is None else round(self.peak_bytes / (1024 * 1024), 1)
+
+    @property
+    def start_mb(self) -> float | None:
+        """Arbeitsspeicher zu Beginn des Blocks (nur mit ``psutil``)."""
+        return None if self.start_bytes is None else round(self.start_bytes / (1024 * 1024), 1)
 
 
 def _resource_peak() -> int | None:
@@ -483,13 +494,16 @@ def evaluate_item(
         ocr_res.error = f"{type(exc).__name__}: {exc}"[:300]
     ocr_res.runtime_s = round(time.perf_counter() - started, 3)
     ocr_res.peak_rss_mb = sampler.peak_mb
+    ocr_res.start_rss_mb = sampler.start_mb
     if run is None:
         return [ocr_res]
     ocr_res.ocr_pages = run.ocr_pages
     ocr_res.pages = len(run.text.pages)
     ocr_res.engines = run.engines
     ocr_res.doc_type_detected = run.classification.doc_type.value
-    ocr_res.apply(score_fields(item.ground_truth, run.outcome.fields, METHOD_OCR, include_values=include_values))
+    ocr_res.apply(
+        score_fields(item.ground_truth, run.outcome.fields, METHOD_OCR, include_values=include_values)
+    )
     results = [ocr_res]
 
     if vlm is not None:
@@ -508,8 +522,33 @@ def evaluate_item(
         vlm_res.runtime_s = round(ocr_res.runtime_s + (time.perf_counter() - vlm_started), 3)
         peaks = [p for p in (ocr_res.peak_rss_mb, vlm_sampler.peak_mb) if p is not None]
         vlm_res.peak_rss_mb = max(peaks) if peaks else None
+        vlm_res.start_rss_mb = ocr_res.start_rss_mb
         results.append(vlm_res)
     return results
+
+
+_COUNT_FIELDS = ("correct", "wrong", "missing", "high_conf_wrong", "unclear", "conflict")
+
+
+def _combine_repeats(runs: list[list[DocResult]]) -> list[DocResult]:
+    """Wiederholungen zusammenfassen: Laufzeit-Median, Speicher-Maximum, Zählwerte aus Lauf 1."""
+    first = runs[0]
+    for pos, result in enumerate(first):
+        same = [r[pos] for r in runs if len(r) > pos]
+        times = sorted(r.runtime_s for r in same)
+        result.runtime_runs = [r.runtime_s for r in same]
+        mid = len(times) // 2
+        result.runtime_s = round(times[mid] if len(times) % 2 else (times[mid - 1] + times[mid]) / 2, 3)
+        peaks = [r.peak_rss_mb for r in same if r.peak_rss_mb is not None]
+        result.peak_rss_mb = max(peaks) if peaks else None
+        starts = [r.start_rss_mb for r in same if r.start_rss_mb is not None]
+        result.start_rss_mb = min(starts) if starts else None
+        if any(
+            tuple(getattr(r, f) for f in _COUNT_FIELDS) != tuple(getattr(result, f) for f in _COUNT_FIELDS)
+            for r in same
+        ):
+            result.notes.append("Ergebnis weicht zwischen Wiederholungen ab (Werte aus Durchlauf 1).")
+    return first
 
 
 @dataclass
@@ -639,6 +678,13 @@ def render_markdown(report: dict[str, Any], *, include_values: bool = False) -> 
         f"{report['set']['fields']} Sollwerte · Umgebung: {env.get('cpu_count', '?')} CPU, "
         f"{env.get('platform', '?')}, OCR: {', '.join(env.get('ocr_engines') or ['–'])}"
     )
+    load = report.get("load_average") or {}
+    if load.get("start") and load.get("end"):
+        lines.append("")
+        lines.append(
+            f"Systemlast (1-Minuten-Mittel) zu Beginn {_num(load['start'][0], 1)}, am Ende "
+            f"{_num(load['end'][0], 1)} · OMP_THREAD_LIMIT: {env.get('omp_thread_limit') or 'nicht gesetzt'}"
+        )
     lines.append("")
     for method in report["methods"]:
         per_cat, overall = aggregate(docs, method)
@@ -651,7 +697,7 @@ def render_markdown(report: dict[str, Any], *, include_values: bool = False) -> 
         lines.append("")
         lines.append(
             "| Datei-ID | Kategorie | Typ erkannt | Felder | Richtig | Falsch | Fehlend | Sicher falsch | "
-            "Unklar | Konflikt | Zeit | RAM |"
+            "Unklar | Konflikt | Zeit | RAM Spitze (davor) |"
         )
         lines.append("|---|---|:-:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for r in docs:
@@ -663,7 +709,7 @@ def render_markdown(report: dict[str, Any], *, include_values: bool = False) -> 
             lines.append(
                 f"| {r.item_id} | {r.category} | {'ja' if r.doc_type_ok else 'nein'} | {r.total} | "
                 f"{r.correct} | {r.wrong} | {r.missing} | {r.high_conf_wrong} | {r.unclear} | {r.conflict} | "
-                f"{_num(r.runtime_s, 2)} s | {_num(r.peak_rss_mb, 0)} MB |"
+                f"{_num(r.runtime_s, 2)} s | {_num(r.peak_rss_mb, 0)} ({_num(r.start_rss_mb, 0)}) MB |"
             )
         lines.append("")
         if include_values:
@@ -694,13 +740,23 @@ def render_markdown(report: dict[str, Any], *, include_values: bool = False) -> 
     lines.append(
         "Legende: *Fehlend* = kein einzelner Wert vorgeschlagen (Status MISSING oder CONFLICT). "
         "*Sicher falsch* = falscher Wert mit Status „Erkannt“ (EXTRACTED), also ohne Unsicherheits-Hinweis. "
-        "Zeit und RAM je Datei inkl. Tesseract. Ergebnisse gelten nur für diesen synthetischen Testsatz."
+        "Zeit und RAM je Datei inkl. Tesseract; *davor* = Arbeitsspeicher vor der Datei. "
+        "Ergebnisse gelten nur für diesen synthetischen Testsatz."
     )
     return "\n".join(lines) + "\n"
 
 
+def _load_average() -> list[float] | None:
+    """Systemlast (1/5/15 min) – zeigt, ob andere Programme die Messung gestört haben."""
+    try:
+        return [round(v, 2) for v in os.getloadavg()]
+    except (AttributeError, OSError):  # Windows
+        return None
+
+
 def _environment(settings: Settings, engines: Sequence[str], sampler_mode: str) -> dict[str, Any]:
     env: dict[str, Any] = {
+        "omp_thread_limit": os.environ.get("OMP_THREAD_LIMIT"),
         "python": platform.python_version(),
         "platform": f"{platform.system()} {platform.machine()}",
         "cpu_count": os.cpu_count(),
@@ -726,9 +782,14 @@ def run_benchmark(
     model: str | None = None,
     measure_memory: bool = True,
     include_values: bool = False,
+    repeat: int = 1,
     progress: Callable[[str], None] | None = None,
 ) -> dict[str, Any]:
-    """Alle Dateien messen und einen JSON-fähigen Bericht liefern."""
+    """Alle Dateien messen und einen JSON-fähigen Bericht liefern.
+
+    ``repeat`` > 1: jede Datei mehrfach verarbeiten; Laufzeit = Median, Speicher = Höchstwert.
+    Die Feldergebnisse stammen aus dem ersten Durchlauf (weichen spätere ab, steht ein Hinweis da).
+    """
     settings = settings or Settings()
     say = progress or (lambda _msg: None)
     ocr = TextRecognitionService(settings)
@@ -747,14 +808,21 @@ def run_benchmark(
             say(f"{VLM_SKIPPED} ({reason})")
 
     documents: list[DocResult] = []
+    load_start = _load_average()
     started = time.perf_counter()
     for idx, item in enumerate(items, start=1):
-        results = evaluate_item(
-            item, ocr, vlm=vlm, measure_memory=measure_memory, include_values=include_values
-        )
+        runs = [
+            evaluate_item(item, ocr, vlm=vlm, measure_memory=measure_memory, include_values=include_values)
+            for _ in range(max(1, int(repeat)))
+        ]
+        results = _combine_repeats(runs)
         documents.extend(results)
         r = results[0]
-        status = f"Fehler ({r.error})" if r.error else f"{r.correct}/{r.total} richtig, {r.high_conf_wrong} sicher falsch"
+        status = (
+            f"Fehler ({r.error})"
+            if r.error
+            else f"{r.correct}/{r.total} richtig, {r.high_conf_wrong} sicher falsch"
+        )
         say(f"[{idx}/{len(items)}] {item.id}: {status}, {r.runtime_s:.2f} s")
     methods = [METHOD_OCR] + ([METHOD_VLM] if vlm is not None else [])
     engines = [e for d in documents for e in d.engines]
@@ -772,6 +840,7 @@ def run_benchmark(
         "methods": methods,
         "vlm": vlm_info,
         "wall_time_s": round(time.perf_counter() - started, 2),
+        "load_average": {"start": load_start, "end": _load_average()},
         "documents": [d.to_dict() for d in documents],
         "categories": {},
         "overall": {},
@@ -807,12 +876,29 @@ def _local_only() -> Iterator[None]:
             uninstall_network_guard()
 
 
+@contextlib.contextmanager
+def _omp_limit(limit: int | None) -> Iterator[None]:
+    """OMP_THREAD_LIMIT für Tesseract-Unterprozesse vorübergehend setzen."""
+    if limit is None:
+        yield
+        return
+    previous = os.environ.get("OMP_THREAD_LIMIT")
+    os.environ["OMP_THREAD_LIMIT"] = str(max(1, int(limit)))
+    try:
+        yield
+    finally:
+        if previous is None:
+            os.environ.pop("OMP_THREAD_LIMIT", None)
+        else:
+            os.environ["OMP_THREAD_LIMIT"] = previous
+
+
 def _load_items(args: argparse.Namespace, tmp_root: Path) -> list[BenchmarkItem]:
     if args.set_dir is not None:
         set_dir = Path(args.set_dir)
         if args.regenerate or not (set_dir / MANIFEST_NAME).is_file():
             print(f"Erzeuge Testsatz in {set_dir} …", file=sys.stderr)
-            items = generate_benchmark_set(set_dir, seed=args.seed)
+            items = generate_benchmark_set(set_dir, seed=args.seed, only=args.only or None)
         else:
             items = load_benchmark_set(set_dir)
     else:
@@ -850,6 +936,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--markdown", type=Path, help="Bericht zusätzlich als Markdown-Datei speichern.")
     p.add_argument("--details", action="store_true", help="Soll-/Ist-Werte je Feld ausgeben (synthetisch).")
     p.add_argument("--no-memory", action="store_true", help="Arbeitsspeicher nicht messen.")
+    p.add_argument("--repeat", type=int, default=1, help="Jede Datei N-mal messen (Laufzeit = Median).")
+    p.add_argument(
+        "--omp-thread-limit",
+        type=int,
+        help="OMP_THREAD_LIMIT für Tesseract setzen (Standard: wie in der App, nicht gesetzt).",
+    )
     p.add_argument("--with-vlm", action="store_true", help="Zusätzlich lokale KI (Ollama, nur Loopback).")
     p.add_argument("--ollama-url", help="Adresse des lokalen Ollama-Dienstes (Standard aus Einstellungen).")
     p.add_argument("--model", help="Modellname für die lokale KI (Standard aus Einstellungen).")
@@ -860,7 +952,14 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     say: Callable[[str], None] = (lambda _m: None) if args.quiet else (lambda m: print(m, file=sys.stderr))
-    with _local_only(), tempfile.TemporaryDirectory(prefix="bench_set_") as tmp:
+    if args.repeat < 1:
+        print("Fehler: --repeat muss mindestens 1 sein.", file=sys.stderr)
+        return 1
+    with (
+        _local_only(),
+        _omp_limit(args.omp_thread_limit),
+        tempfile.TemporaryDirectory(prefix="bench_set_") as tmp,
+    ):
         try:
             items = _load_items(args, Path(tmp))
         except (OSError, ValueError) as exc:
@@ -879,6 +978,7 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             measure_memory=not args.no_memory,
             include_values=args.details,
+            repeat=args.repeat,
             progress=say,
         )
     if args.with_vlm and report["vlm"]["status"] == "skipped":

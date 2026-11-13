@@ -104,6 +104,7 @@ class Case(BaseModel):
     order_fields: dict[str, FieldValue] = Field(default_factory=dict)
     template_id: str | None = None
     template_version: str | None = None
+    bundle_id: str | None = None  # Kundenmappe (Stapelverarbeitung), falls zugeordnet
     history: list[HistoryEntry] = Field(default_factory=list)
     exports: list[ExportRecord] = Field(default_factory=list)
     archived: bool = False
@@ -161,6 +162,21 @@ class Case(BaseModel):
         self.touch()
 
 
+def new_bundle_id() -> str:
+    return f"M{utcnow():%Y%m%d}-{secrets.token_hex(3).upper()}"
+
+
+class Bundle(BaseModel):
+    """Kundenmappe: mehrere Vorgänge einer Kundin/eines Kunden (z. B. 3 Verträge, 3 Wünsche)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(default_factory=new_bundle_id)
+    title: str
+    created_at: datetime = Field(default_factory=utcnow)
+    case_count: int = 0
+
+
 class CaseSummary(BaseModel):
     """Leichtgewichtige Listenansicht (Dashboard)."""
 
@@ -175,3 +191,4 @@ class CaseSummary(BaseModel):
     document_count: int = 0
     archived: bool = False
     open_issues: int = 0
+    bundle_id: str | None = None

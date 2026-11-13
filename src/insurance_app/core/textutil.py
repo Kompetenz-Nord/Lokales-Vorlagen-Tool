@@ -64,6 +64,32 @@ def _year(y: int) -> int:
     return y
 
 
+def _two_digit_year(
+    yy: int,
+    month: int,
+    day: int,
+    *,
+    past_only: bool,
+    max_future_years: int | None,
+    today: date | None,
+) -> int:
+    """Jahrhundert für ein zweistelliges Jahr wählen.
+
+    * ``past_only`` (z. B. Geburtsdatum): 20xx, solange das Datum nicht in der
+      Zukunft liegt, sonst 19xx.
+    * ``max_future_years``: 20xx, solange das Jahr höchstens so viele Jahre nach
+      dem aktuellen Jahr liegt, sonst 19xx.
+    * sonst die feste Grenze 70 (siehe ``_year``).
+    """
+    ref = today or date.today()
+    if past_only:
+        candidate = _safe_date(2000 + yy, month, day)
+        return 2000 + yy if candidate is not None and candidate <= ref else 1900 + yy
+    if max_future_years is not None:
+        return 2000 + yy if 2000 + yy <= ref.year + max_future_years else 1900 + yy
+    return _year(yy)
+
+
 def _safe_date(y: int, m: int, d: int) -> date | None:
     try:
         if not 1900 <= y <= 2200:
@@ -78,21 +104,47 @@ _ISO_DATE = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
 _LONG_DATE = re.compile(r"(?<!\d)(\d{1,2})\.?\s*([A-Za-zÄÖÜäöüß]{3,10})\.?\s+(\d{4})(?!\d)")
 
 
-def parse_german_date(text: str) -> date | None:
+def parse_german_date(
+    text: str,
+    *,
+    past_only: bool = False,
+    max_future_years: int | None = None,
+    today: date | None = None,
+) -> date | None:
     """Erstes eindeutiges Datum aus einem kurzen Text lesen.
 
     Unterstützt ``01.02.2022``, ``1.2.22``, ``01/02/2022``, ``2022-02-01`` und
     ``13. März 2025``. Gibt ``None`` zurück, wenn kein gültiges Datum enthalten ist.
+
+    Zweistellige Jahre: ohne Zusatzangaben gilt die feste Grenze 70
+    (``1.2.69`` -> 2069, ``1.2.70`` -> 1970). ``past_only=True`` wählt das
+    Jahrhundert so, dass das Datum nicht in der Zukunft liegt (Geburtsdatum);
+    ``max_future_years=n`` nimmt 20xx bis höchstens ``n`` Jahre nach ``today``.
     """
-    found = find_dates(text)
+    found = find_dates(text, past_only=past_only, max_future_years=max_future_years, today=today)
     return found[0][0] if found else None
 
 
-def find_dates(text: str) -> list[tuple[date, tuple[int, int]]]:
-    """Alle Datumsangaben mit Fundstelle (Start, Ende), in Textreihenfolge."""
+def find_dates(
+    text: str,
+    *,
+    past_only: bool = False,
+    max_future_years: int | None = None,
+    today: date | None = None,
+) -> list[tuple[date, tuple[int, int]]]:
+    """Alle Datumsangaben mit Fundstelle (Start, Ende), in Textreihenfolge.
+
+    Zur Bedeutung von ``past_only``/``max_future_years`` siehe ``parse_german_date``.
+    """
     results: list[tuple[date, tuple[int, int]]] = []
     for m in _NUMERIC_DATE.finditer(text):
-        d = _safe_date(_year(int(m.group(3))), int(m.group(2)), int(m.group(1)))
+        day, month, raw_year = int(m.group(1)), int(m.group(2)), m.group(3)
+        year = int(raw_year)
+        if len(raw_year) == 2:
+            year = _two_digit_year(
+                year, month, day, past_only=past_only, max_future_years=max_future_years, today=today
+            )
+        d = _safe_date(year, month, day)
         if d:
             results.append((d, m.span()))
     for m in _ISO_DATE.finditer(text):

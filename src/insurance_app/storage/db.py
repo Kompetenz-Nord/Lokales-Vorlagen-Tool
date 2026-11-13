@@ -11,6 +11,14 @@ Schema-Version 1
 * ``export_log``        – Exportprotokoll (nur Dateiname, keine Personendaten)
 * ``template_versions`` – importierte/geprüfte Vorlagenversionen
 * ``schema_migrations`` – angewendete Migrationen
+
+Schema-Version 2
+----------------
+* ``cases.revision``    – Speicherstand des Vorgangs (optimistische Sperre: ein
+  veralteter Stand darf einen neueren nicht überschreiben)
+
+Rechte: Datenbank, WAL- und SHM-Datei sind auf POSIX-Systemen nur für den
+eigenen Benutzer lesbar (``0600``).
 """
 
 from __future__ import annotations
@@ -108,8 +116,26 @@ _V1: tuple[str, ...] = (
     """,
 )
 
+_V2: tuple[str, ...] = (
+    # Bestehende Vorgänge erhalten Stand 1 (0 bedeutet "noch nie gespeichert").
+    "ALTER TABLE cases ADD COLUMN revision INTEGER NOT NULL DEFAULT 1",
+)
+
+_V3: tuple[str, ...] = (
+    # Kundenmappen (Stapelverarbeitung mehrerer Verträge einer Kundin/eines Kunden)
+    """
+    CREATE TABLE bundles (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        created_at TEXT NOT NULL
+    )
+    """,
+    "ALTER TABLE cases ADD COLUMN bundle_id TEXT",
+    "CREATE INDEX idx_cases_bundle ON cases(bundle_id)",
+)
+
 # Versionsnummer -> SQL-Anweisungen. Neue Versionen nur anhängen, nie ändern.
-MIGRATIONS: dict[int, tuple[str, ...]] = {1: _V1}
+MIGRATIONS: dict[int, tuple[str, ...]] = {1: _V1, 2: _V2, 3: _V3}
 LATEST_SCHEMA_VERSION = max(MIGRATIONS)
 
 
@@ -131,6 +157,8 @@ class Database:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             new_file = not self.path.exists()
+            if new_file:
+                self._precreate_private()
             self._conn = sqlite3.connect(
                 str(self.path),
                 timeout=10.0,
@@ -144,8 +172,7 @@ class Database:
         self._conn.row_factory = sqlite3.Row
         try:
             self._configure()
-            if new_file:
-                self._restrict_permissions()
+            self._restrict_permissions()
             self._migrate()
         except sqlite3.DatabaseError as exc:
             self._conn.close()
@@ -172,11 +199,27 @@ class Database:
             # Datenbank als SQLite-Datei prüfen (löst DatabaseError bei Fremddateien aus)
             self._conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
 
-    def _restrict_permissions(self) -> None:
+    def _precreate_private(self) -> None:
+        """Neue Datenbankdatei vorab mit ``0600`` anlegen.
+
+        SQLite übernimmt beim Anlegen von ``-wal``/``-shm`` die Rechte der
+        Hauptdatei. Wird sie erst nach dem ersten Zugriff eingeschränkt, entstehen
+        WAL und SHM der ersten Sitzung mit den Standardrechten (z. B. ``0644``).
+        """
         if os.name != "posix":
             return
-        with contextlib.suppress(OSError):
-            os.chmod(self.path, 0o600)
+        with contextlib.suppress(FileExistsError):
+            os.close(os.open(self.path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600))
+
+    def _restrict_permissions(self) -> None:
+        """Datenbank, WAL und SHM nur für den eigenen Benutzer (repariert auch ältere Installationen)."""
+        if os.name != "posix":
+            return
+        for suffix in ("", "-wal", "-shm"):
+            p = Path(str(self.path) + suffix)
+            with contextlib.suppress(OSError):
+                if p.exists() and (p.stat().st_mode & 0o077):
+                    os.chmod(p, 0o600)
 
     def _migrate(self) -> None:
         with self._lock:

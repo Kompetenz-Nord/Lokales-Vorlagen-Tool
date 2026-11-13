@@ -13,16 +13,26 @@ from .network_guard import (
     uninstall_network_guard,
 )
 from .redaction import RedactingFilter, redact
-from .tempfiles import TempWorkspace, cleanup_stale, force_rmtree
+from .tempfiles import (
+    InstanceLock,
+    TempWorkspace,
+    acquire_instance_lock,
+    cleanup_stale,
+    cleanup_temp_dir,
+    force_rmtree,
+)
 
 __all__ = [
+    "InstanceLock",
     "JobLoggerAdapter",
     "NetworkBlockedError",
     "RedactingFilter",
     "TempWorkspace",
+    "acquire_instance_lock",
     "allow_network",
     "assert_loopback_url",
     "cleanup_stale",
+    "cleanup_temp_dir",
     "configure_logging",
     "force_rmtree",
     "install_network_guard",

@@ -1,0 +1,14 @@
+{
+  "contract.end_date": "2057-01-01",
+  "contract.number": "6602381-9",
+  "contract.start_date": "2022-01-01",
+  "contract.tariff": "BU-Plus (MUSTER)",
+  "insured.first_name": "Max",
+  "insured.last_name": "Mustermann",
+  "insurer.name": "Beispiel Lebensversicherung AG",
+  "policyholder.legal_form": "GmbH",
+  "policyholder.name": "Muster Tischlerei GmbH",
+  "premium.amount": "140.00",
+  "premium.currency": "EUR",
+  "premium.frequency": "monthly"
+}

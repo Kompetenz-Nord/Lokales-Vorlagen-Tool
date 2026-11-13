@@ -113,3 +113,78 @@ def test_docling_missing_artifacts_path(tmp_path, monkeypatch):
     ok, reason = backend.is_available()
     assert not ok
     assert "Docling-Modelle" in reason
+
+
+# ---------------------------------------------------------------------------
+# PRIV-10: Zwischendateien von Docling nur im privaten Temp-Ordner der App
+# ---------------------------------------------------------------------------
+
+
+def _fake_docling(monkeypatch):
+    """Minimales Ersatzmodul ``docling.datamodel.base_models`` (Docling selbst ist optional)."""
+    import sys
+    import types
+
+    pkg = types.ModuleType("docling")
+    datamodel = types.ModuleType("docling.datamodel")
+    base_models = types.ModuleType("docling.datamodel.base_models")
+    base_models.DocumentStream = lambda name, stream: SimpleNamespace(name=name, stream=stream)
+    monkeypatch.setitem(sys.modules, "docling", pkg)
+    monkeypatch.setitem(sys.modules, "docling.datamodel", datamodel)
+    monkeypatch.setitem(sys.modules, "docling.datamodel.base_models", base_models)
+
+
+class _TempWritingConverter:
+    """Verhält sich wie Doclings Tesseract-CLI-Anbindung: Seitenbild als NamedTemporaryFile."""
+
+    def __init__(self, crash: bool = False):
+        self.crash = crash
+        self.seen: list[str] = []
+
+    def convert(self, source):
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as fh:
+            fh.write(b"MUSTER")
+        self.seen.append(fh.name)
+        if self.crash:
+            raise RuntimeError("Absturz simuliert")
+        return SimpleNamespace(document=SimpleNamespace(pages={}, texts=[], tables=[]))
+
+
+def test_priv_10_docling_temp_files_stay_in_private_app_temp_dir(tmp_path, monkeypatch):
+    import tempfile
+
+    _fake_docling(monkeypatch)
+    base = tmp_path / "user_data" / "tmp"
+    backend = DoclingBackend(temp_base=base)
+    monkeypatch.setattr(backend, "is_available", lambda: (True, "Docling installiert."))
+    converter = _TempWritingConverter()
+    backend._converter = converter
+    before = tempfile.tempdir
+    backend._convert("seite.png", b"x")
+    assert tempfile.tempdir == before  # wiederhergestellt
+    assert len(converter.seen) == 1
+    written = converter.seen[0]
+    assert os.path.dirname(os.path.dirname(written)) == str(base)
+    assert os.path.basename(os.path.dirname(written)).startswith("docling-")
+    assert not os.path.exists(os.path.dirname(written))  # Arbeitsordner wieder entfernt
+    # auch bei einem Fehler wird aufgeräumt und tempdir wiederhergestellt
+    backend._converter = _TempWritingConverter(crash=True)
+    with pytest.raises(docling_backend.OcrError):
+        backend._convert("seite.png", b"x")
+    assert tempfile.tempdir == before
+    assert list(base.iterdir()) == []
+
+
+def test_priv_10_without_temp_base_nothing_changes(tmp_path, monkeypatch):
+    import tempfile
+
+    _fake_docling(monkeypatch)
+    backend = DoclingBackend()
+    monkeypatch.setattr(backend, "is_available", lambda: (True, "Docling installiert."))
+    backend._converter = SimpleNamespace(
+        convert=lambda source: SimpleNamespace(tempdir=tempfile.tempdir, document=None)
+    )
+    before = tempfile.tempdir
+    assert backend._convert("seite.png", b"x").tempdir == before

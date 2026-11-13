@@ -48,7 +48,8 @@ RULE_CONFIDENCE: dict[str, float] = {
     "laufzeit_range": 0.8,
     "bav_keyword": 0.5,
     "insurer_header": 0.6,
-    "insurer_known_name": 0.45,
+    # unter MIN_EXTRACTED_CONFIDENCE (0,45): ein bekannter Name im Briefkopf allein ist nur ein Hinweis
+    "insurer_known_name": 0.4,
     "premium_frequency_from_label": 0.6,
 }
 
@@ -231,14 +232,21 @@ _VN_SECTION: dict[str, list[str]] = {
         "Beruf",
     ],
 }
-_VN_SECTION["policyholder"] = [*_VN_SECTION["policyholder"], "Name / Firma", "Firma", "Firmenname"]
+_VN_SECTION["policyholder"] = [
+    *_VN_SECTION["policyholder"],
+    "Name / Firma",
+    "Firma",
+    "Firmenname",
+    # bAV: Versicherungsnehmer ist der Arbeitgeber – „Unternehmen“ ist hier NICHT der Versicherer
+    "Unternehmen",
+]
 
 _VP_SECTION: dict[str, list[str]] = {
     **_person_section("insured", "insured", "insured.last_name"),
     "insured.birth_date": ["Geburtsdatum", "geb. am", "geboren am"],
     "insured.birth_place": ["Geburtsort"],
     "insured.nationality": ["Staatsangehörigkeit", "Nationalität"],
-    "_ignore": ["Anrede", "Telefon", "E-Mail", "Beruf"],
+    "_ignore": ["Anrede", "Telefon", "E-Mail", "Beruf", "Unternehmen"],
 }
 
 _BANK_SECTION: dict[str, list[str]] = {
@@ -252,7 +260,7 @@ _PAYER_SECTION: dict[str, list[str]] = {
     "bank.iban": ["IBAN"],
     "bank.account_holder": ["Kontoinhaber", "Kontoinhaberin", "Name des Kontoinhabers"],
     "bank.institution": ["Kreditinstitut", "Geldinstitut", "Name der Bank", "Bankname"],
-    "_ignore": ["Name", "Anschrift", "Adresse", "BIC", "Geburtsdatum"],
+    "_ignore": ["Name", "Anschrift", "Adresse", "BIC", "Geburtsdatum", "Unternehmen"],
 }
 
 _INTERMEDIARY_SECTION: dict[str, list[str]] = {
@@ -292,18 +300,36 @@ SECTION_LABELS: dict[str, dict[str, list[str]]] = {
     ),
     "Beitragszahler": _PAYER_SECTION,
     **dict.fromkeys(["Vermittler", "Ihr Vermittler", "Ihr Betreuer"], _INTERMEDIARY_SECTION),
+    # Vertragsabschnitte: „Unternehmen“ ist hier der Versicherer (sonst Personenabschnitt -> Arbeitgeber)
+    **dict.fromkeys(
+        ["Vertragsdaten", "Vertragsangaben", "Angaben zum Vertrag"],
+        {"insurer.name": ["Unternehmen"]},
+    ),
     # Neutrale Überschriften: beenden einen Personenabschnitt
     **dict.fromkeys(
         [
-            "Vertragsdaten",
-            "Vertragsangaben",
-            "Angaben zum Vertrag",
             "Beitrag und Zahlweise",
             "Beitragsdaten",
             "Leistungen",
             "Versicherungsleistungen",
             "Bezugsrecht",
             "Hinweise",
+            # Abschnitte über Dritte: deren Name/Anschrift gehört weder zu VN noch zu VP
+            "Arbeitgeber",
+            "Angaben zum Arbeitgeber",
+            "Bezugsberechtigung",
+            "Bezugsberechtigt",
+            "Bezugsberechtigung im Todesfall",
+            "Bezugsberechtigt im Todesfall",
+            "Bezugsberechtigte Person",
+            "Bezugsberechtigte Personen",
+            "Ihr Ansprechpartner",
+            "Ihre Ansprechpartnerin",
+            "Ansprechpartner",
+            "Ansprechpartnerin",
+            "Berater",
+            "Ihr Berater",
+            "Betreuer",
         ],
         {},
     ),
@@ -527,9 +553,13 @@ KNOWN_INSURERS: list[tuple[str, str]] = [
     ("wuerttembergische", "Württembergische"),
     ("heidelberger leben", "Heidelberger Leben"),
     ("standard life", "Standard Life"),
-    ("tecis", "tecis"),
+    # „tecis“ ist ein Vertrieb (Vermittler), kein Versicherer -> bewusst nicht aufgeführt
 ]
 _KNOWN_RE = [(re.compile(rf"(?<![\w+]){re.escape(p)}(?![\w+])"), name) for p, name in KNOWN_INSURERS]
+# „Stuttgarter Straße 5“, „Nürnberger Str. 12“: Straßenname, kein Versicherer
+_STREET_AFTER = re.compile(
+    r"^[\s-]*(?:str(?:asse|\.|\b)|platz\b|allee\b|ring\b|weg\b|damm\b|gasse\b|chaussee\b|ufer\b)"
+)
 
 
 def _in_letterhead(page: PageText, line: Line) -> bool:
@@ -576,12 +606,17 @@ def find_insurer_names(page: PageText, lines: list[Line]) -> list[LayoutMatch]:
         if not _in_letterhead(page, line):
             continue
         f = fold(line.text)
+        found = False
         for pattern, name in _KNOWN_RE:
-            m = pattern.search(f)
-            if m:
+            for m in pattern.finditer(f):
+                if _STREET_AFTER.match(f[m.end() :]):
+                    continue  # Straßenname
                 hit = _hit(page, "insurer.name", line.words, line.words, name, "insurer_known_name")
                 if hit:
                     out.append(hit)
+                found = True
+                break
+            if found:
                 break
     return out
 

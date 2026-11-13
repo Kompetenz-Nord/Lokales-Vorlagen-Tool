@@ -8,6 +8,7 @@ from .repository import (
     CaseRepository,
     DocumentImportError,
     DocumentNotFoundError,
+    StaleCaseError,
     count_open_issues,
     file_sha256,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "Database",
     "DocumentImportError",
     "DocumentNotFoundError",
+    "StaleCaseError",
     "StorageError",
     "count_open_issues",
     "file_sha256",
