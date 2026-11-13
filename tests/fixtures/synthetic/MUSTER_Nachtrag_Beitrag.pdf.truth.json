@@ -1,0 +1,16 @@
+{
+  "contract.changes": "Herabsetzung des Beitrags (MUSTER)",
+  "contract.number": "8815201-7",
+  "insured.city": "Beispielstadt",
+  "insured.first_name": "Erika",
+  "insured.house_number": "3",
+  "insured.last_name": "Musterfrau",
+  "insured.postal_code": "54321",
+  "insured.street": "Neue Straße",
+  "insurer.name": "Beispiel Lebensversicherung AG",
+  "policyholder.legal_form": "GmbH",
+  "policyholder.name": "Muster Bäckerei GmbH",
+  "premium.amount": "100.00",
+  "premium.currency": "EUR",
+  "premium.frequency": "monthly"
+}

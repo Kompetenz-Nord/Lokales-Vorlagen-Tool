@@ -1,0 +1,11 @@
+{
+  "contract.number": "8815201-7",
+  "contract.pension_start_date": "2053-01-01",
+  "contract.premium_end_date": "2052-12-01",
+  "contract.start_date": "2019-01-01",
+  "insured.first_name": "Erika",
+  "insured.last_name": "Musterfrau",
+  "insurer.name": "Beispiel Lebensversicherung AG",
+  "policyholder.legal_form": "GmbH",
+  "policyholder.name": "Muster Bäckerei GmbH"
+}
