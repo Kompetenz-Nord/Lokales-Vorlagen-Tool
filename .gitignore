@@ -18,6 +18,7 @@ kundendokumente/
 *.pdf
 !assets/templates/originals/*.pdf
 !tests/fixtures/synthetic/**/*.pdf
+!docs/beispiel/*.pdf
 *.png
 *.jpg
 *.jpeg
