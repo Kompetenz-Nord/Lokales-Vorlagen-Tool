@@ -2,13 +2,21 @@
 
 **Kurz gesagt:**
 
-- Gemessen wurde **nur OCR** (vorhandene PDF-Textebene + Tesseract, danach die regelbasierte Extraktion). Die **lokale KI wurde nicht gemessen** (siehe [Abschnitt 6](#6-vergleich-mit-der-lokalen-ki)).
 - Testsatz: **20 synthetische Dateien** (25 Seiten, 456 Sollwerte), alle mit „MUSTER – KEINE ECHTDATEN“ gekennzeichnet. Die Zahlen gelten **nur für diesen Testsatz**, nicht für echte Dokumente.
-- Ergebnis gesamt: **80,9 % richtig, 4,8 % falsch, 14,3 % fehlend**.
-- **Digitale PDFs:** 93,8 % richtig, **kein** falscher Wert. Einzige Lücke: Werte in Tabellen mit Spaltenköpfen.
-- **Ordentliche Scans** (100–300 dpi, leichtes Rauschen, bis 4,5° schräg, starke JPEG-Kompression): meist 25 von 26 Werten richtig. Aber fast jede Scanseite hat **einen Wert, der falsch ist und trotzdem als „Erkannt“ erscheint** (z. B. „§“ wird zu „8“, „Bäckerei“ zu „Backerei“).
-- **Zwei Totalausfälle und eine Lücke:** stark verrauschter Scan (0 %, obwohl für Menschen lesbar), um 90° gedrehter Scan (0 %, dazu 2 sicher falsche Werte), Tabellen mit Spaltenköpfen (5 von 12 Werten fehlen).
-- **Laufzeit:** digitale PDF ca. 0,04 s, Scanseite ca. 2–3 s auf 4 CPU-Kernen. **Unter CPU-Last** lief Tesseract in der Standardeinstellung bis in die Zeitgrenze von 240 s je Seite. Die Seite blieb dann leer.
+- **Nur OCR** (PDF-Textebene + Tesseract + Regeln), Stand 13.11.2026 nach den Korrekturen: **97,6 % richtig, 1,5 % falsch, 0,9 % fehlend.**
+
+  | Kennzahl | vorher | jetzt |
+  |---|---:|---:|
+  | Richtig | 80,9 % | **97,6 %** |
+  | Falsch | 4,8 % | **1,5 %** |
+  | Fehlend | 14,3 % | **0,9 %** |
+  | Sicher falsch (falsch und ohne Warnung) | 16 | **2** |
+  | Unklar (App warnt selbst) | 11 | 15 |
+  | Konflikt (Mensch entscheidet) | 0 | 2 |
+
+- **Behoben:** um 90° gedrehter Scan (0 → 26 von 26), stark verrauschter Scan (0 → 26 von 26), Tabellen mit Spaltenköpfen (7 → 11 von 12), „§“ als „8“ gelesen, Wasserzeichen-Reste im Wert, IBAN mit „O“ statt „0“.
+- **Verbleibend:** Der Umlaut in „Bäckerei“ wird in 2 Dateien als „Backerei“ gelesen und erscheint als „Erkannt“. Das lässt sich aus dem Bild allein nicht sicher erkennen.
+- **Lokale KI auf CPU** (gesondert gemessen, [Abschnitt 6](#6-lokale-ki-echte-messung-auf-cpu)): `glm-ocr` 38–43 s je Seite, 26 von 26 Feldern; `qwen3-vl:4b-instruct` ca. 250–256 s je Seite; die Denkvariante `qwen3-vl:4b` ist ohne Grafikkarte nicht nutzbar.
 - **Folge für die Praxis:** Jeden Wert mit der Quelle vergleichen, bei Scans besonders gründlich. Der Status „Erkannt“ heißt **nicht** „richtig“.
 
 ---
@@ -57,120 +65,134 @@ Manche Dateien zählen in zwei Kategorien, etwa die Referenz-Scans. In der Zeile
 | | |
 |---|---|
 | Datum | 13.11.2026 |
-| Rechner | Linux-Container (x86_64), 4 CPU-Kerne, 15,7 GB RAM, **keine GPU** |
+| Rechner | Linux-Container (x86_64), 4 CPU-Kerne, 15 GB RAM, **keine GPU** |
 | Software | Python 3.13.18, Tesseract 5.3.4 (`deu+eng`, `osd`), PyMuPDF 2.1 (MuPDF 1.28.6) |
 | App-Einstellungen | Standard (`Settings()`): OCR-Backend `tesseract`, 300 dpi, Zeitgrenze 240 s je Seite |
-| Code-Stand | Commit `0327d2d` plus nicht eingecheckte Änderungen paralleler Arbeiten (Stand der Messung) |
-| Störungen | Auf demselben Rechner liefen gleichzeitig andere Testläufe. Die Systemlast lag bei 2,2 bis 4,8 (Hauptmessung) bzw. bis 12 (Vergleichslauf in Abschnitt 5). |
+| Code-Stand | Commit `ae2c686` |
+| Systemlast | 0,7 bis 0,9 (1-Minuten-Mittel) – der Rechner war sonst unbelastet |
 
-Hauptmessung:
+Messung:
 
 ```
-python3 scripts/benchmark_extraction.py --set-dir tests/fixtures/benchmark \
-    --omp-thread-limit 1 --repeat 3 --details --json ergebnis.json
+OMP_THREAD_LIMIT=1 python3 scripts/benchmark_extraction.py --json ergebnis.json
 ```
 
-`--omp-thread-limit 1` lässt Tesseract mit nur einem Rechenkern laufen. Der Grund steht in Abschnitt 5. `--repeat 3`: Jede Datei wurde 3-mal verarbeitet. Die Zeit ist der Median, der Speicher der Höchstwert. Die Feldergebnisse waren in allen Wiederholungen gleich, ebenso in einem zweiten vollständigen Lauf.
+Die App lässt Tesseract inzwischen selbst mit einem Rechenkern laufen (`OMP_THREAD_LIMIT=1`), solange die Umgebung nichts anderes vorgibt. Der Grund steht in Abschnitt 5. Die Feldergebnisse waren in zwei vollständigen Läufen gleich. Die Messung „vorher“ stammt vom selben Tag und Rechner (Commit `0327d2d`, dort unter Fremdlast und mit `--repeat 3`).
 
 ## 4. Ergebnisse (nur OCR)
 
 ### 4.1 Je Kategorie
 
-| Kategorie | Dateien | Seiten (davon OCR) | Sollwerte | Richtig | Falsch | Fehlend | Sicher falsch | Unklar | Konflikt | Ø Zeit/Datei | Spitzen-RAM |
-|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
-| digital | 4 | 6 (0) | 81 | 93,8 % | 0,0 % | 6,2 % | 0 | 0 | 0 | 0,04 s | 92 MB |
-| rauschen | 3 | 3 (3) | 78 | 64,1 % | 2,6 % | 33,3 % | 2 | 0 | 0 | 2,85 s | 542 MB |
-| schraeglage | 4 | 4 (4) | 104 | 96,2 % | 3,8 % | 0,0 % | 4 | 0 | 0 | 2,73 s | 445 MB |
-| aufloesung | 4 | 4 (4) | 104 | 91,3 % | 5,8 % | 2,9 % | 4 | 3 | 0 | 2,43 s | 462 MB |
-| jpeg | 2 | 2 (2) | 39 | 97,4 % | 2,6 % | 0,0 % | 1 | 1 | 0 | 1,63 s | 422 MB |
-| drehung | 1 | 1 (1) | 26 | 0,0 % | 11,5 % | 88,5 % | 2 | 1 | 0 | 2,39 s | 481 MB |
-| tabelle | 2 | 2 (1) | 24 | 58,3 % | 0,0 % | 41,7 % | 0 | 1 | 0 | 1,29 s | 483 MB |
-| verwechslung | 2 | 2 (1) | 52 | 92,3 % | 7,7 % | 0,0 % | 3 | 1 | 0 | 1,19 s | 498 MB |
-| mehrseitig | 3 | 8 (5) | 67 | 89,6 % | 6,0 % | 4,5 % | 2 | 4 | 0 | 3,47 s | 542 MB |
-| **Gesamt** | **20** | **25 (19)** | **456** | **80,9 %** | **4,8 %** | **14,3 %** | **16** | **11** | **0** | **2,28 s** | **542 MB** |
+| Kategorie | Dateien | Seiten (davon OCR) | Sollwerte | Richtig | Falsch | Fehlend | Sicher falsch | Unklar | Konflikt | Ø Zeit/Datei | Spitzen-RAM | Richtig vorher |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| digital | 4 | 6 (0) | 81 | 98,8 % | 0,0 % | 1,2 % | 0 | 0 | 1 | 0,04 s | 106 MB | 93,8 % |
+| rauschen | 3 | 3 (3) | 78 | 100,0 % | 0,0 % | 0,0 % | 0 | 0 | 0 | 3,82 s | 340 MB | 64,1 % |
+| schraeglage | 4 | 4 (4) | 104 | 100,0 % | 0,0 % | 0,0 % | 0 | 0 | 0 | 2,80 s | 349 MB | 96,2 % |
+| aufloesung | 4 | 4 (4) | 104 | 97,1 % | 1,9 % | 1,0 % | 0 | 5 | 0 | 2,45 s | 349 MB | 91,3 % |
+| jpeg | 2 | 2 (2) | 39 | 97,4 % | 2,6 % | 0,0 % | 1 | 1 | 0 | 1,85 s | 304 MB | 97,4 % |
+| drehung | 1 | 1 (1) | 26 | 100,0 % | 0,0 % | 0,0 % | 0 | 0 | 0 | 6,06 s | 349 MB | 0,0 % |
+| tabelle | 2 | 2 (1) | 24 | 91,7 % | 0,0 % | 8,3 % | 0 | 2 | 2 | 1,26 s | 347 MB | 58,3 % |
+| verwechslung | 2 | 2 (1) | 52 | 94,2 % | 5,8 % | 0,0 % | 0 | 4 | 0 | 1,21 s | 353 MB | 92,3 % |
+| mehrseitig | 3 | 8 (5) | 67 | 97,0 % | 1,5 % | 1,5 % | 1 | 3 | 0 | 3,78 s | 366 MB | 89,6 % |
+| **Gesamt** | **20** | **25 (19)** | **456** | **97,6 %** | **1,5 %** | **0,9 %** | **2** | **15** | **2** | **2,71 s** | **366 MB** | **80,9 %** |
 
-Ohne die beiden Totalausfälle (`rauschen_hoch`, `drehung_90`) sind es 404 Sollwerte: 91,3 % richtig, 4,7 % falsch, 14 sicher falsch. Den Dokumenttyp erkannte die App bei 19 von 20 Dateien richtig. Die Ausnahme ist der stark verrauschte Scan, bei dem kein Text erkannt wurde.
+Den Dokumenttyp erkannte die App bei allen 20 Dateien richtig (vorher 19).
 
 ### 4.2 Je Datei
 
-| Datei-ID | Richtig | Falsch | Fehlend | Sicher falsch | Unklar | Zeit | RAM Spitze (vorher) |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| digital_police_3seiten | 29/29 | 0 | 0 | 0 | 0 | 0,08 s | 92 (85) MB |
-| digital_nachtrag | 14/14 | 0 | 0 | 0 | 0 | 0,03 s | 92 (92) MB |
-| digital_tabelle | 7/12 | 0 | 5 | 0 | 0 | 0,03 s | 92 (92) MB |
-| digital_verwechslung | 26/26 | 0 | 0 | 0 | 0 | 0,04 s | 92 (92) MB |
-| rauschen_ohne | 25/26 | 1 | 0 | 1 | 0 | 2,06 s | 296 (92) MB |
-| rauschen_niedrig | 25/26 | 1 | 0 | 1 | 0 | 2,35 s | 438 (136) MB |
-| rauschen_hoch | 0/26 | 0 | 26 | 0 | 0 | 4,14 s | 542 (178) MB |
-| schraeglage_1_5 | 25/26 | 1 | 0 | 1 | 0 | 2,75 s | 386 (186) MB |
-| schraeglage_3_0 | 25/26 | 1 | 0 | 1 | 0 | 2,70 s | 420 (236) MB |
-| schraeglage_4_5 | 25/26 | 1 | 0 | 1 | 0 | 3,11 s | 445 (244) MB |
-| aufloesung_200 | 25/26 | 1 | 0 | 0 | 1 | 2,71 s | 454 (294) MB |
-| aufloesung_150 | 20/26 | 3 | 3 | 2 | 2 | 2,44 s | 462 (302) MB |
-| aufloesung_100 | 25/26 | 1 | 0 | 1 | 0 | 2,23 s | 406 (306) MB |
-| jpeg_q20_police | 25/26 | 1 | 0 | 1 | 1 | 2,08 s | 422 (314) MB |
-| jpeg_q25_portal | 13/13 | 0 | 0 | 0 | 0 | 1,18 s | 397 (329) MB |
-| drehung_90 | 0/26 | 3 | 23 | 2 | 1 | 2,39 s | 481 (306) MB |
-| tabelle_scan | 7/12 | 0 | 5 | 0 | 1 | 2,55 s | 483 (306) MB |
-| verwechslung_scan | 22/26 | 4 | 0 | 3 | 1 | 2,34 s | 498 (335) MB |
-| mehrseitig_police_scan | 23/29 | 3 | 3 | 1 | 4 | 6,15 s | 528 (346) MB |
-| mehrseitig_standmitteilung_scan | 8/9 | 1 | 0 | 1 | 0 | 4,17 s | 542 (357) MB |
+| Datei-ID | Richtig | Falsch | Fehlend | Sicher falsch | Unklar | Konflikt | Zeit | Spitzen-RAM |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| digital_police_3seiten | 29/29 | 0 | 0 | 0 | 0 | 0 | 0,08 s | 104 MB |
+| digital_nachtrag | 14/14 | 0 | 0 | 0 | 0 | 0 | 0,03 s | 106 MB |
+| digital_tabelle | 11/12 | 0 | 1 | 0 | 0 | 1 | 0,03 s | 106 MB |
+| digital_verwechslung | 26/26 | 0 | 0 | 0 | 0 | 0 | 0,04 s | 106 MB |
+| rauschen_ohne | 26/26 | 0 | 0 | 0 | 0 | 0 | 2,39 s | 290 MB |
+| rauschen_niedrig | 26/26 | 0 | 0 | 0 | 0 | 0 | 2,15 s | 299 MB |
+| rauschen_hoch | 26/26 | 0 | 0 | 0 | 0 | 0 | 6,92 s | 340 MB |
+| schraeglage_1_5 | 26/26 | 0 | 0 | 0 | 0 | 0 | 2,41 s | 316 MB |
+| schraeglage_3_0 | 26/26 | 0 | 0 | 0 | 0 | 0 | 3,52 s | 325 MB |
+| schraeglage_4_5 | 26/26 | 0 | 0 | 0 | 0 | 0 | 3,12 s | 349 MB |
+| aufloesung_200 | 25/26 | 1 | 0 | 0 | 3 | 0 | 2,78 s | 349 MB |
+| aufloesung_150 | 24/26 | 1 | 1 | 0 | 2 | 0 | 2,60 s | 345 MB |
+| aufloesung_100 | 26/26 | 0 | 0 | 0 | 0 | 0 | 2,27 s | 283 MB |
+| jpeg_q20_police | 25/26 | 1 | 0 | 1 | 1 | 0 | 2,32 s | 304 MB |
+| jpeg_q25_portal | 13/13 | 0 | 0 | 0 | 0 | 0 | 1,39 s | 279 MB |
+| drehung_90 | 26/26 | 0 | 0 | 0 | 0 | 0 | 6,06 s | 349 MB |
+| tabelle_scan | 11/12 | 0 | 1 | 0 | 2 | 1 | 2,50 s | 347 MB |
+| verwechslung_scan | 23/26 | 3 | 0 | 0 | 4 | 0 | 2,37 s | 353 MB |
+| mehrseitig_police_scan | 28/29 | 0 | 1 | 0 | 3 | 0 | 6,71 s | 356 MB |
+| mehrseitig_standmitteilung_scan | 8/9 | 1 | 0 | 1 | 0 | 0 | 4,57 s | 366 MB |
 
-„Vorher“ ist der Arbeitsspeicher des Prozesses, bevor die Datei verarbeitet wurde.
+### 4.3 Alle verbleibenden Abweichungen
 
-## 5. Einordnung: Wo „nur OCR“ Probleme hat
+| Datei-ID | Feld | Soll | Ist | Status in der App |
+|---|---|---|---|---|
+| jpeg_q20_police | Name Versicherungsnehmer | Muster Bäckerei GmbH | Muster Backerei GmbH | **Erkannt** (sicher falsch) |
+| mehrseitig_standmitteilung_scan | Name Versicherungsnehmer | Muster Bäckerei GmbH | Muster Backerei GmbH | **Erkannt** (sicher falsch) |
+| aufloesung_200 | Tarif | DV-Klassik (MUSTER) | -DV-Klassik | Unklar |
+| aufloesung_150 | Beitrag | 150,00 | nicht lesbar | Unklar |
+| verwechslung_scan | Kontoinhaber | Olli Illner | Olli Iliner | Unklar |
+| verwechslung_scan | Straße (versicherte Person, Versicherungsnehmer) | Ilmweg | IImweg | Unklar |
+| digital_tabelle, tabelle_scan | Beitrag | 140,00 | mehrere Beträge im Beitragsverlauf | Konflikt (Mensch entscheidet) |
+| aufloesung_150, mehrseitig_police_scan | Währung | EUR | – | Fehlt |
 
-**Digitale PDFs sind zuverlässig.** Alle Werte in Label-Wert-Zeilen wurden richtig erkannt, auch über 3 Seiten verteilt und mit verwechselbaren Zeichen. Bankdaten aus der Fußzeile des Versicherers wurden korrekt ignoriert.
+Bei 9 von 11 Abweichungen warnt die App selbst (Unklar, Konflikt oder Fehlt). Ohne Warnung bleiben nur die beiden Umlaut-Fälle.
 
-**Tabellen mit Spaltenköpfen fehlen** (digital und Scan, je 5 von 12 Werten). Steht die Beschriftung *über* dem Wert und rechts daneben schon die nächste Beschriftung („Versicherungsbeginn | Ablauf | Tarif | Zahlweise“), behandelt die App das Feld als leer. Nur die letzte Spalte („Zahlweise“) wird gefunden. Auch der Beitragsverlauf mit drei Zeilen liefert keinen Wert und keinen Konflikt. Die App zeigt dazu den Hinweis „In der Quelle ist für dieses Feld kein Wert eingetragen.“ Das stimmt hier nicht.
+## 5. Einordnung
 
-**Typische OCR-Verwechslungen erscheinen als „Erkannt“.** Auf fast jeder ordentlichen Scanseite gab es genau einen sicher falschen Wert:
+**Digitale PDFs sind zuverlässig.** 80 von 81 Werten richtig, kein falscher Wert. Der eine offene Wert ist der Beitrag in der Tabelle mit Beitragsverlauf: Dort stehen drei verschiedene Beträge, die App meldet einen Konflikt und rät nicht.
 
-- „§ 3“ wurde zu „8 3“ oder „3 3“ (Produktname). Tesseract war sich dabei sehr sicher (Wortkonfidenz 0,95). Deshalb fällt der Fehler an der Konfidenz nicht auf.
-- „Bäckerei“ wurde zu „Backerei“ (3-mal, Name des Versicherungsnehmers).
-- Verwechslung l/I: „Ilmweg“ wurde zu „IImweg“ (2-mal), „Illner“ zu „Iliner“.
-- Ein Wortfetzen vom diagonalen MUSTER-Wasserzeichen landete vor dem Wert, z. B. „eats Backstraße“ oder „‘SH Musterweg“. Das Fetzen-Wort hatte nur die Konfidenz 0,07–0,10. Weil die App den Mittelwert aller Wörter nimmt, blieb der Wert trotzdem „Erkannt“ (0,55–0,56).
+**Was die Korrekturen bewirkt haben**
 
-Gut: Vertragsnummern, Daten und Beträge mit vielen 0/1 wurden auch im Scan richtig gelesen. Eine IBAN mit „O“ statt „0“ („DEO2 …“) wurde als „Unklar“ markiert, nicht als „Erkannt“.
+| Problem vorher | Maßnahme | Ergebnis |
+|---|---|---|
+| 90° gedrehter Scan: 0 von 26, dazu 2 sicher falsche Werte | Lageerkennung (Tesseract OSD) auch dann, wenn die Wörter hochkant stehen. Die Fundstelle wird in die angezeigte Seite zurückgerechnet. | 26 von 26 |
+| Stark verrauschter Scan: kein einziges Wort | Bleibt das Ergebnis schwach, folgt ein zweiter Versuch mit einem Medianfilter (einfacher Rauschfilter). Das bessere Ergebnis zählt. | 26 von 26 |
+| Tabellen: Werte unter Spaltenköpfen fehlten (5 von 12) | Steht rechts neben einer Beschriftung die nächste Beschriftung, sucht die App den Wert darunter in derselben Spalte. | 11 von 12 |
+| „§ 3“ als „8 3“ oder „3 3“ gelesen (vorher der häufigste sicher falsche Wert) | In Gesetzesverweisen („gemäß … Nr. … EStG“) wird das Paragrafenzeichen wiederhergestellt. | 0 Fälle |
+| Wortfetzen vom Wasserzeichen im Wert („eats Backstraße“) | Allein stehende, sehr unsichere Wortfetzen werden nicht als Wert gelesen. | 0 Fälle |
+| IBAN „DEO2 …“ blieb ungelesen | „O“→„0“ und „I“/„l“→„1“ nur an Ziffernstellen und **nur**, wenn danach die Prüfziffer stimmt. Der Wert bleibt „Unklar“ mit Hinweis. | richtig, Status Unklar |
+| „IImweg“ statt „Ilmweg“ als „Erkannt“ | Die App korrigiert nicht, markiert solche Werte aber immer als „Unklar“. | falsch, aber mit Warnung |
+| Tesseract lief unter CPU-Last bis in die Zeitgrenze (240 s, leere Seite) | Tesseract läuft mit einem Rechenkern. | siehe unten |
 
-**Schräglage bis 4,5° ist kein Problem.** Die Begradigung wirkt: 25 von 26 richtig, genau wie beim geraden Scan.
+**Was bleibt:** Verlorene Umlaut-Punkte („Bäckerei“ → „Backerei“) erkennt die App nicht. Tesseract ist sich dabei sicher, und „Backerei“ ist kein offensichtlicher Lesefehler. Namen müssen deshalb immer mit der Quelle verglichen werden.
 
-**Auflösung:** 300, 200 und 100 dpi lagen bei 25 von 26 richtig. 150 dpi lag mit 20 von 26 deutlich darunter. Das ist ein Einzelbefund: Diese Datei ist zusätzlich JPEG-komprimiert, und das Wasserzeichen kreuzt die Anschrift. Daraus folgt nicht, dass 150 dpi grundsätzlich schlechter ist als 100 dpi.
-
-**Starkes Rauschen: Totalausfall.** Der Scan ist für Menschen gut lesbar, Tesseract liefert aber kein einziges Wort. Es entsteht nichts Falsches, aber auch nichts Brauchbares. In einem gesonderten Versuch (Tesseract direkt, ohne App) lieferte dasselbe Bild nach einem 3×3-Medianfilter 142 Wörter mit Konfidenz 0,88. Der Medianfilter ist ein einfacher Rauschfilter. Die App wendet ihn derzeit nicht an.
-
-**90° gedreht: Totalausfall mit Fehlern.** Tesseract liest den gedrehten Text erstaunlich gut (Konfidenz 0,93). Deshalb startet die App die automatische Lageerkennung nicht, denn die greift nur unter 0,5. Die Wortpositionen bleiben gedreht, und Beschriftung und Wert passen nicht mehr zusammen. Ergebnis: 0 von 26 richtig und 2 sicher falsche Werte (Versicherer „handelt MUSTER“, Produkt „Musterallee“).
-
-**Mehrseitige Scans** verhalten sich wie die einzelnen Seiten. Bei der Police mit 150 dpi fehlen PLZ/Ort und Währung, zwei Werte sind „Unklar“. Die Standmitteilung als reiner Scan wurde bis auf „Backerei“ richtig gelesen. Auch die Briefanschrift des Vermittlers wurde dort nicht als Kundenanschrift übernommen.
+**Schräglage bis 4,5°, Auflösung 100–300 dpi, starke JPEG-Kompression:** jeweils 24 bis 26 von 26 Werten richtig.
 
 **Laufzeit und Arbeitsspeicher**
 
-- Eine digitale PDF braucht etwa 0,04 s. Eine Scanseite braucht 2–3 s, der Portal-Screenshot 1,2 s, die 3-seitige Police 6,2 s.
-- Spitzen-RAM inklusive Tesseract: 92 MB bei digitalen PDFs, bis 542 MB bei Scans. Über den ganzen Lauf stieg der Grundbedarf des Prozesses von 85 auf 357 MB. Ob das ein Speicherleck ist oder der Prozess nur Speicher behält, wurde nicht untersucht.
-- **CPU-Last ist ein echtes Risiko.** In der Standardeinstellung der App nutzt Tesseract alle Kerne (OpenMP). Ein Vergleichslauf ohne `--omp-thread-limit` lief, während andere Prozesse Tesseract nutzten (Systemlast 8–12). Ergebnis:
-  - Zwei Seiten liefen in die Zeitgrenze von 240 s und blieben leer (`aufloesung_100`, `jpeg_q20_police`, je 26 fehlende Werte).
-  - Der Portal-Screenshot brauchte 143 s statt 1,2 s.
-  - Gesamt fielen dadurch nur 70,0 % statt 80,9 % richtig aus.
-- Gesonderter Versuch mit einer Seite und Tesseract direkt:
+- Eine digitale PDF braucht etwa 0,04 s, eine Scanseite 2–3,5 s. Gedrehte und stark verrauschte Seiten brauchen wegen des zweiten Versuchs 6–7 s.
+- Spitzen-RAM inklusive Tesseract: rund 106 MB bei digitalen PDFs, bis 366 MB bei Scans.
+- **CPU-Last** (gemessen vor der Korrektur): Ohne Begrenzung nutzte Tesseract alle Kerne. Unter Fremdlast liefen zwei Seiten in die Zeitgrenze von 240 s und blieben leer. Gesonderter Versuch mit einer Seite und Tesseract direkt:
 
-  | Bedingung | Standard (alle Kerne) | Ein Kern (`OMP_THREAD_LIMIT=1`) |
+  | Bedingung | alle Kerne | ein Kern (`OMP_THREAD_LIMIT=1`) |
   |---|---:|---:|
   | Rechner ohne Last | 1,47 s | 1,57 s |
   | 4 voll ausgelastete Hintergrundprozesse | 38,5 s / 248,0 s (zwei Läufe) | 2,47 s |
 
-  Ohne Last ist ein Kern also kaum langsamer, unter Last aber um ein Vielfaches stabiler.
+  Ohne Last ist ein Kern kaum langsamer, unter Last aber um ein Vielfaches stabiler. Deshalb ist ein Kern jetzt die Voreinstellung.
 
-## 6. Vergleich mit der lokalen KI
+## 6. Lokale KI: echte Messung auf CPU
 
-**Nicht gemessen – in der Build-Umgebung war kein Netzwerkzugang zu Ollama/Modellen; Messung auf Zielhardware mit: `python3 scripts/benchmark_extraction.py --with-vlm`**
+**Gemessen am 13.11.2026** im selben Container (4 CPU-Kerne, 15 GB RAM, **keine GPU**). Ollama lief lokal, nur über `127.0.0.1`, mit `OLLAMA_NO_CLOUD=1`. Testdokument: der synthetische Scan `MUSTER_Police_Scan.pdf` (1 Seite, 26 Sollfelder).
 
-Stand der Build-Umgebung: Gegen Ende der Arbeiten lief auf dem Build-Rechner ein lokaler Ollama-Dienst (127.0.0.1:11434, Version 0.40.16, Modell `qwen3-vl:4b` vorhanden). Ihn hatten parallele Arbeiten gestartet. Ein Probelauf mit `--with-vlm` für eine einzige digitale Datei (`digital_nachtrag`) hatte nach 300 s noch kein Ergebnis und wurde abgebrochen. Gründe: keine GPU, und der Dienst arbeitete gleichzeitig mit einem anderen Modell (Systemlast ca. 9). Eine belastbare Messung liegt daher **nicht** vor. Weitere Läufe wurden unterlassen, um die parallelen Arbeiten nicht zu stören.
+| Modell | Rolle in der App | Zeit je Seite | Ergebnis |
+|---|---|---:|---|
+| `glm-ocr` | aktives Modell (Voreinstellung): liest den Text, die App-Regeln ordnen ihn den Feldern zu | 38–43 s | **26 von 26** Feldern richtig |
+| `qwen3-vl:4b-instruct` | Ausweichmodell (Voreinstellung): liest Felder direkt aus dem Seitenbild | ca. 250–256 s | 6 von 8 abgefragten Feldern richtig |
+| `qwen3-vl:4b` (Denkvariante) | wählbar, nicht Voreinstellung | 345 s und 370 s | Antwort beide Male am Token-Limit abgeschnitten, **0 Felder nutzbar** |
 
-Optional mit `--ollama-url http://127.0.0.1:11434`, `--model qwen3-vl:4b` und `--vlm-timeout 600`. Ohne GPU kann eine Seite länger brauchen als die Standard-Zeitgrenze von 120 s je Seite. Dann steht unter „Hinweise“, dass die lokale KI nicht rechtzeitig geantwortet hat. Das Skript spricht nur Loopback-Adressen an, der Netzwerk-Wächter der App ist aktiv. Ist kein Ollama-Dienst mit dem Modell erreichbar, meldet es „übersprungen: lokale KI nicht verfügbar“ und misst nur OCR.
+- **`glm-ocr` im ganzen App-Ablauf:** Auf dem Scan ergänzte die KI 9 zuvor fehlende Felder und erzeugte 2 Konflikte. Über Konflikte entscheidet der Mensch, die KI überschreibt nichts still. Die echte Modellausgabe liegt als Testdatei bei (`tests/fixtures/synthetic/glm_ocr_ausgabe_police_scan_s1.txt`), der Test `test_real_glm_ocr_output_is_fully_extracted` sichert die 26 von 26 ab.
+- **Denkvariante:** Ohne Grafikkarte nicht nutzbar. Die App kennzeichnet sie als „nur mit Grafikkarte empfohlen“.
+- **Arbeitsspeicher:** Zwei Bildmodelle gleichzeitig mit 16.384 Token Kontext führten zum Speicherüberlauf. Die App fragt deshalb mit 8.192 Token Kontext an, lässt immer nur ein Modell über alle Dokumente laufen und entlädt es danach. Auf Rechnern mit 16 GB empfiehlt sich zusätzlich `OLLAMA_MAX_LOADED_MODELS=1`.
 
-Mit KI verfährt das Skript wie die App: Die KI prüft nur Felder, die fehlen, unklar sind oder einen Konflikt haben (`VlmExtractor` + `reconcile`). Die Tabelle zeigt dann ein zweites Verfahren `ocr_vlm` mit denselben Kennzahlen. Dieses Dokument behauptet **keine** Verbesserung durch die KI, solange diese Messung fehlt.
+**Nicht gemessen:**
 
-Auf Zielhardware lohnt sich der Blick auf die Kategorien `rauschen`, `drehung` und `tabelle`, wo „nur OCR“ ausfällt, und auf die Spalte „Sicher falsch“. Die KI ergänzt keine Felder, die schon „Erkannt“ sind. Sicher falsche OCR-Werte bleiben daher auch mit KI bestehen.
+- Zeiten mit Grafikkarte oder auf Apple-Chips (M-Serie). Dort ist deutlich mehr Tempo zu erwarten, belegt ist das hier nicht.
+- `gemma4:e4b` (Gegenprüfung im Profil „Maximal“).
+- Die KI über den ganzen Testsatz mit 20 Dateien. Auf CPU dauert das bei rund 4 Minuten je Seite entsprechend lange. Selbst messen: `python3 scripts/benchmark_extraction.py --with-vlm --model qwen3-vl:4b-instruct --vlm-timeout 600`.
+
+Mit `--with-vlm` verfährt das Skript wie die App: Die KI prüft nur Felder, die fehlen, unklar sind oder einen Konflikt haben. Sicher falsche OCR-Werte wie „Backerei“ bleiben daher auch mit KI bestehen. Das Skript spricht nur Loopback-Adressen an.
 
 ## 7. Grenzen dieser Messung
 
@@ -199,13 +221,18 @@ python3 scripts/benchmark_extraction.py --set-dir tests/fixtures/benchmark --reg
 
 Weitere Schalter: `--repeat N` (Median der Laufzeit), `--omp-thread-limit 1`, `--no-memory`, `--seed N`, `--vlm-timeout S`. Tests: `python3 -m pytest tests/test_benchmark` (der Tesseract-Test ist als `slow` markiert).
 
-## 9. Gefundene Schwachstellen (für die Entwicklung)
+## 9. Stand der gefundenen Schwachstellen
 
-Die Fehler sind hier nur dokumentiert, nicht behoben. Jeder lässt sich mit `--only <Datei-ID> --details` nachstellen.
+| Nr. | Schwachstelle | Stand |
+|---|---|---|
+| 1 | Lageerkennung bei 90° gedrehten Seiten | behoben (`ocr/tesseract_backend.py`) |
+| 2 | Kein Rauschfilter | behoben (`ocr/preprocess.py`, `denoise_median`) |
+| 3 | Tesseract ohne Thread-Begrenzung | behoben (`subprocess_env`) |
+| 4 | Tabellen mit Spaltenköpfen | behoben (`extraction/layout.py`); Beitragsverlauf mit mehreren Beträgen bleibt bewusst ein Konflikt |
+| 5 | Unsichere Wortfetzen im Wert | behoben (`drop_noise_fragments`) |
+| 6 | IBAN mit O statt 0 | behoben (`repair_iban_ocr`), Wert bleibt „Unklar“ |
+| 7 | „§“ als Ziffer gelesen | behoben (`fix_paragraph_sign`) |
+| 8 | I/l-Verwechslung („IImweg“) | entschärft: immer „Unklar“, keine automatische Korrektur |
+| 9 | Verlorene Umlaute („Backerei“) | **offen** – nicht sicher erkennbar |
 
-1. **Lage-Erkennung bei 90° gedrehten Seiten** (`ocr/tesseract_backend.py`, `TesseractBackend.recognize`): Die Lageerkennung (OSD) läuft nur bei mittlerer Konfidenz < 0,5. Tesseract liest gedrehte Seiten aber mit 0,93. Datei `drehung_90`: Soll = Drehung 90°, aufgerichtete Koordinaten. Ist = Drehung 0, 0/26 richtig, 2 sicher falsch.
-2. **Kein Rauschfilter** (`ocr/preprocess.py` / `TesseractBackend.recognize`): Datei `rauschen_hoch` liefert 0 Wörter. Ein 3×3-Medianfilter ergab im Versuch 142 Wörter mit Konfidenz 0,88. Vorschlag: zweiter Versuch mit gefiltertem Bild, wenn die Seite leer oder schwach bleibt.
-3. **Tesseract ohne Thread-Begrenzung** (`ocr/tesseract_backend.py`, `TesseractBackend._run`): Unter CPU-Last bis 248 s je Seite, dann Zeitgrenze und leere Seite. Mit `OMP_THREAD_LIMIT=1` waren es 2,5 s. Vorschlag: Variable beim Aufruf von `subprocess.run` setzen, falls nicht vom Nutzer vorgegeben.
-4. **Tabellen mit Spaltenköpfen** (`extraction/layout.py`, `_classify`): Steht rechts neben einer Beschriftung die nächste Beschriftung (`right.first_is_label`), wird das Feld als leer markiert, ohne unter der Beschriftung zu suchen. Dateien `digital_tabelle`, `tabelle_scan`: Versicherungsbeginn, Ablauf, Tarif und Beitrag fehlen. Dazu der irreführende Hinweis „In der Quelle ist für dieses Feld kein Wert eingetragen.“ (`extraction/merge.py`, `_placeholder_note`).
-5. **Unsichere Wortfetzen im Wert** (`extraction/extractor.py`, `_word_confidence` / `_DocExtractor._convert`): Die Konfidenz ist der Mittelwert der Wörter. Ein vorangestelltes Fetzen-Wort mit 0,07 bleibt im Wert, und der Status bleibt „Erkannt“ („‘SH Musterweg“, „eats Backstraße“). Vorschlag: Fetzen-Wörter am Rand mit sehr geringer Konfidenz abtrennen oder das Minimum statt des Mittelwerts verwenden.
-6. **IBAN mit O statt 0** (`extraction/normalize.py`, `normalize_iban`): „DEO2 1001 0010 0006 8201 01“ wird nicht normalisiert und bleibt „Unklar“. Das ist sicher, aber unnötig. Vorschlag: O→0 und I/l→1 an Ziffernpositionen nur dann ersetzen, wenn danach die Prüfziffer stimmt, und den Wert weiter als „Unklar“ mit Hinweis markieren.
+Abgesichert durch `tests/test_benchmark/test_bench_ocr_regression.py` und `tests/test_extraction/test_ext_ocr_confusions.py`.

@@ -5,10 +5,10 @@
 - **Die App funktioniert ohne KI.** Die lokale KI ist ein Zusatz und standardmäßig ausgeschaltet.
 - **Mit KI:** GLM-OCR liest schwierige Scans und Tabellen. Qwen3-VL springt ein, wenn GLM-OCR fehlt oder scheitert. Gemma 4 kann optional gegenprüfen.
 - **Alles lokal, nichts geht in die Cloud.** Die App spricht nur mit Ollama auf demselben Rechner (Adresse `127.0.0.1`). Cloud-Modelle lehnt sie ab.
-- **Sie entscheiden**, welches Modell aktiv läuft. Voreinstellung: `glm-ocr` aktiv, `qwen3-vl:4b` als Ausweichmodell.
+- **Sie entscheiden**, welches Modell aktiv läuft. Voreinstellung: `glm-ocr` aktiv, `qwen3-vl:4b-instruct` als Ausweichmodell.
 - **KI-Werte werden nie automatisch bestätigt.** Sie erscheinen höchstens als „Erkannt – bitte prüfen“ oder als „Konflikt“. Auftragsdaten und rechtlich relevante Felder fasst die KI nie an.
 - **Empfehlung:** Mac mit Apple Silicon und 16 GB oder Windows-PC mit 16 GB und NVIDIA-Grafikkarte → Profil „standard“. Ohne Grafikkarte läuft es auch, aber deutlich langsamer.
-- **Ehrlicher Stand:** Automatische Tests laufen gegen einen simulierten Ollama-Server. In der Build-Umgebung lief zusätzlich ein echtes Ollama (nur Prozessor, keine Grafikkarte). Messwerte zu Laufzeit und Genauigkeit stehen nur in [BENCHMARK.md](BENCHMARK.md) – dieses Dokument nennt bewusst keine eigenen Zahlen.
+- **Ehrlicher Stand:** Automatische Tests laufen gegen einen simulierten Ollama-Server. In der Build-Umgebung lief zusätzlich ein echtes Ollama (nur Prozessor, keine Grafikkarte). Dort gemessen: `glm-ocr` 38–43 s je Seite, `qwen3-vl:4b-instruct` ca. 250–256 s je Seite. Mit Grafikkarte oder Apple Silicon ist deutlich mehr Tempo zu erwarten, gemessen wurde das nicht. Einzelheiten: [BENCHMARK.md](BENCHMARK.md#6-lokale-ki-echte-messung-auf-cpu).
 
 ---
 
@@ -37,7 +37,7 @@
 | **OCR-Modell** | Liest Text aus dem Bild einer Seite (OCR = optische Zeichenerkennung). Hier: GLM-OCR. |
 | **Vision-Sprachmodell (VLM)** | KI, die Bild und Text gemeinsam versteht. Sie kann Werte direkt aus dem Seitenbild lesen und Feldern zuordnen. Hier: Qwen3-VL und Gemma 4. |
 | **Aktives Modell** | Das Modell, das zuerst läuft. Voreinstellung: `glm-ocr`. |
-| **Ausweichmodell** | Springt ein, wenn das aktive Modell fehlt oder bei einem Dokument nichts liefert. Voreinstellung: `qwen3-vl:4b`. |
+| **Ausweichmodell** | Springt ein, wenn das aktive Modell fehlt oder bei einem Dokument nichts liefert. Voreinstellung: `qwen3-vl:4b-instruct`. |
 | **Gegenprüfung** | Optionales drittes Modell, das unabhängig nachliest (z. B. `gemma4:e4b`). Weicht es ab, entsteht ein Konflikt. |
 | **Profil** | Vorschlag, welche Modelle zu Ihrem Rechner passen: „kompakt“, „standard“, „maximal“. |
 | **Loopback** | Netzwerkadresse des eigenen Rechners (`127.0.0.1`). Daten verlassen den Rechner dabei nicht. |
@@ -52,7 +52,8 @@
 | Modell | Aufgabe in der App | Vorteil | Download (exakt) | Lizenz | Quelle |
 |---|---|---|---|---|---|
 | `glm-ocr` | **Aktives Modell** (Voreinstellung). Liest schwierige Seiten als Text, auch Tabellen. Die geprüften Regeln der App ordnen danach die Felder zu. | Klein und auf Dokumente und Tabellen spezialisiert (laut Anbieter Z.ai). Etwa 0,9 Mrd. Parameter (`ollama show`: 891 Mio. plus 434 Mio. für den Bildteil). | **2,66 GB** (2.655.025.740 Byte) | Im Ollama-Manifest **keine** Lizenzangabe – vor dem Einsatz beim Anbieter Z.ai prüfen | [Z.ai](https://docs.z.ai/guides/vlm/glm-ocr), [Hugging Face](https://huggingface.co/docs/transformers/main/en/model_doc/glm_ocr) |
-| `qwen3-vl:4b` | **Ausweichmodell** (Voreinstellung). Liest Felder direkt aus dem Seitenbild. Antwort als JSON, jeder Wert mit wörtlichem Zitat. | Versteht Layout und Bild gemeinsam und ordnet Werte direkt den Feldern zu. Etwa 4 Mrd. Parameter. | **3,34 GB** (3.336.619.180 Byte) | Apache 2.0 (laut Ollama-Manifest) | Ollama-Registry |
+| `qwen3-vl:4b-instruct` | **Ausweichmodell** (Voreinstellung). Liest Felder direkt aus dem Seitenbild, ohne vorgeschaltete Denkphase. Antwort als JSON, jeder Wert mit wörtlichem Zitat. | Versteht Layout und Bild gemeinsam und ordnet Werte direkt den Feldern zu. Antwortet direkt im geforderten Format und ist deshalb ohne Grafikkarte deutlich schneller als die Denkvariante. Etwa 4 Mrd. Parameter. | **3,34 GB**  | Apache 2.0 (laut Ollama-Manifest) | Ollama-Registry |
+| `qwen3-vl:4b` | **Denkvariante** desselben Modells. Wählbar, aber keine Voreinstellung. | „Denkt“ vor der Antwort erst nach. Das kostet viel Zeit und Antwortlänge. In der App gekennzeichnet als „nur mit Grafikkarte empfohlen“. | **3,34 GB** (3.336.619.180 Byte) | Apache 2.0 (laut Ollama-Manifest) | Ollama-Registry, [Ollama: Thinking](https://docs.ollama.com/capabilities/thinking.md) |
 | `gemma4:e4b` | **Gegenprüfung** (optional, Profil „maximal“). Liest dieselben Felder unabhängig. | Andere Modellfamilie: Fehler eines einzelnen Modells fallen eher auf, weil Abweichungen als Konflikt erscheinen. | **6,58 GB** | Apache 2.0 (laut Ollama-Manifest) | Ollama-Registry |
 
 - Größen laut Ollama-Registry-Manifest, abgerufen am 13.11.2026. 1 GB = 10⁹ Byte. Für `glm-ocr` und `qwen3-vl:4b` stimmt die Bytezahl mit der lokalen Modellliste (`ollama list`) in der Build-Umgebung überein.
@@ -71,7 +72,8 @@
 | Start | Nur auf Klick: Vorgang → Reiter „Dokumente“ → **„Lokale KI-Zweitprüfung“**. Der Knopf ist nur aktiv, wenn die lokale KI eingeschaltet und bereit ist. |
 | Welche Seiten | Je Dokument die Seiten ohne PDF-Textebene oder mit unsicherer Texterkennung. Sind alle Seiten gut lesbar, die ersten zwei. Höchstens 3 Seiten je Dokument, gerendert mit 150 dpi, längste Bildkante höchstens 1600 Pixel. |
 | Welches Modell zuerst | Das **aktive Modell**. Ist es nicht heruntergeladen, übernimmt das **Ausweichmodell** diese Rolle. |
-| Ausweichen | Liefert das aktive Modell bei einem Dokument keinen Vorschlag oder scheitert es, liest das **Ausweichmodell** dieses Dokument zusätzlich. |
+| Ausweichen | Liefert das aktive Modell bei einem Dokument keinen Vorschlag oder scheitert es, liest das **Ausweichmodell** danach nur diese Dokumente. |
+| Ein Modell nach dem anderen | Jedes Modell bearbeitet erst alle Dokumente und wird dann aus dem Arbeitsspeicher entladen. So liegen nie zwei Modelle gleichzeitig im Speicher. |
 | Gegenprüfung | Ist ein Gegenprüfungsmodell gewählt und vorhanden, liest es jedes Dokument zusätzlich. |
 | GLM-OCR (Texterkennung) | Liefert Text. Die App wertet ihn mit denselben Regeln aus wie die normale Texterkennung. Die Wortpositionen sind dabei nur angenähert. Der Beleg zeigt daher Seite und Textausschnitt, aber keine Markierung im Seitenbild. |
 | Qwen3-VL / Gemma 4 (Bildmodelle) | Nur für **Vertragsdaten**, die aus Dokumenten gelesen werden dürfen, **nicht** rechtlich relevant und noch nicht von Ihnen bestätigt sind. Ist eine Vorlage gewählt, bevorzugt die App deren Felder. Fester, eng begrenzter Auftrag. Antwort nur als JSON nach festem Schema. Temperatur 0 (möglichst gleichbleibende Antworten). |
@@ -87,6 +89,7 @@ Alle KI-Vorschläge laufen durch denselben Abgleich (`local_ai/reconcile.py`). D
 | Fehlt | lesbar | **Erkannt – bitte prüfen**, Hinweis „Nur durch lokale KI gelesen – besonders sorgfältig prüfen.“ |
 | Fehlt | nicht eindeutig lesbar | Unklar |
 | Unklar | lesbar, und alle bisherigen Funde waren unlesbar | Erkannt – bitte prüfen, gleicher Hinweis |
+| Unklar | lesbar, aber anderer Wert als die unsichere Texterkennung | **Konflikt** – beide Werte stehen zur Auswahl, Sie entscheiden |
 | Unklar | sonst | bleibt Unklar, Vorschlag wird angehängt |
 | Erkannt | gleicher Wert | bleibt Erkannt, Vorschlag wird angehängt |
 | Erkannt | anderer Wert | **Konflikt** – Sie wählen den richtigen Wert |
@@ -116,8 +119,8 @@ Richtwerte aus `src/insurance_app/local_ai/profiles.py` – **nicht auf Zielger�
 | Profil | Modelle | Download gesamt | macOS | Windows | Arbeitsspeicher mind. / empfohlen | Freier Speicherplatz |
 |---|---|---|---|---|---|---|
 | **kompakt** | `glm-ocr` | 2,66 GB | Apple Silicon (M1 oder neuer) mit mindestens 8 GB gemeinsamem Arbeitsspeicher | 64-Bit-Windows mit mindestens 8 GB RAM; Grafikkarte nicht erforderlich | 8 / 16 GB | 4 GB |
-| **standard** (empfohlen) | `glm-ocr` + `qwen3-vl:4b` | 6,00 GB | Apple Silicon (M1 oder neuer) mit 16 GB gemeinsamem Arbeitsspeicher | 16 GB RAM; empfohlen: NVIDIA-Grafikkarte mit mindestens 6–8 GB Grafikspeicher (ohne GPU deutlich langsamer) | 16 / 16 GB | 8 GB |
-| **maximal** | `glm-ocr` + `qwen3-vl:4b` + `gemma4:e4b` | 12,58 GB | Apple Silicon mit 32 GB gemeinsamem Arbeitsspeicher (z. B. M-Pro/Max); 16 GB möglich, aber langsamer | 32 GB RAM und NVIDIA-Grafikkarte mit mindestens 12 GB Grafikspeicher empfohlen | 16 / 32 GB | 16 GB |
+| **standard** (empfohlen) | `glm-ocr` + `qwen3-vl:4b-instruct` | 6,00 GB | Apple Silicon (M1 oder neuer) mit 16 GB gemeinsamem Arbeitsspeicher | 16 GB RAM; empfohlen: NVIDIA-Grafikkarte mit mindestens 6–8 GB Grafikspeicher (ohne GPU deutlich langsamer) | 16 / 16 GB | 8 GB |
+| **maximal** | `glm-ocr` + `qwen3-vl:4b-instruct` + `gemma4:e4b` | 12,58 GB | Apple Silicon mit 32 GB gemeinsamem Arbeitsspeicher (z. B. M-Pro/Max); 16 GB möglich, aber langsamer | 32 GB RAM und NVIDIA-Grafikkarte mit mindestens 12 GB Grafikspeicher empfohlen | 16 / 32 GB | 16 GB |
 
 **So schlägt die App ein Profil vor** (`recommend_profile`):
 
@@ -145,13 +148,23 @@ Richtwerte aus `src/insurance_app/local_ai/profiles.py` – **nicht auf Zielger�
 Weitere Hinweise:
 
 - **Grafikspeicher:** Passt ein Modell nicht ganz in den Grafikspeicher, lagert Ollama Teile auf den Prozessor aus. Das bremst. Prüfen mit `ollama ps` (Spalte `PROCESSOR`, z. B. „100% GPU“).
-- **Kontextlänge** (wie viel Text und Bild das Modell auf einmal verarbeitet): Ollama nutzt bei unter 24 GiB Grafikspeicher standardmäßig 4.000 Token. Für Bilder reicht das nicht. Die App fordert deshalb bei jeder Bildanfrage 16.384 Token an. `OLLAMA_CONTEXT_LENGTH` müssen Sie nicht ändern. Mehr Kontext braucht mehr Speicher.
+- **Kontextlänge** (wie viel Text und Bild das Modell auf einmal verarbeitet): Ollama nutzt bei unter 24 GiB Grafikspeicher standardmäßig 4.000 Token. Für Bilder reicht das nicht. Die App fordert deshalb bei jeder Bildanfrage 8.192 Token an. `OLLAMA_CONTEXT_LENGTH` müssen Sie nicht ändern. Mehr Kontext braucht mehr Speicher: Mit 16.384 Token und zwei gleichzeitig geladenen Bildmodellen lief der Arbeitsspeicher im Test über.
+- **Nur ein Modell im Speicher:** Die App entlädt jedes Modell nach Gebrauch. Auf Rechnern mit 16 GB empfiehlt sich zusätzlich die Ollama-Einstellung `OLLAMA_MAX_LOADED_MODELS=1` (Umgebungsvariable, vor dem Start von Ollama setzen).
 - **Zeitlimit:** Standard 600 Sekunden je Seite (`ai_timeout_s`). Bildmodelle können ohne Grafikkarte sehr lange brauchen.
 
 ### 4.3 Ehrlich: Betrieb ohne Grafikkarte
 
-- In der Build-Umgebung lief Ollama 0.40.16 **nur auf dem Prozessor**: 4 virtuelle Kerne (Intel Xeon), 15,7 GiB Arbeitsspeicher, keine Grafikkarte. Geladen waren `glm-ocr` und `qwen3-vl:4b`.
-- Gemessene Laufzeiten und Erkennungsquoten stehen **nur** in [BENCHMARK.md](BENCHMARK.md). Dieses Dokument nennt keine eigenen Zahlen.
+- In der Build-Umgebung lief Ollama 0.40.16 **nur auf dem Prozessor**: 4 virtuelle Kerne (Intel Xeon), 15,7 GiB Arbeitsspeicher, keine Grafikkarte. Geladen waren `glm-ocr`, `qwen3-vl:4b-instruct` und `qwen3-vl:4b`.
+- Gemessen an einem synthetischen Scan (1 Seite, 26 Felder):
+
+  | Modell | Zeit je Seite | Ergebnis |
+  |---|---:|---|
+  | `glm-ocr` | 38–43 s | 26 von 26 Feldern richtig |
+  | `qwen3-vl:4b-instruct` | ca. 250–256 s | 6 von 8 abgefragten Feldern richtig |
+  | `qwen3-vl:4b` (Denkvariante) | 345–370 s | Antwort abgeschnitten, 0 Felder nutzbar |
+
+- **Was das für Sie heißt:** Ohne Grafikkarte ist `glm-ocr` gut nutzbar (unter einer Minute je Seite). Das Ausweichmodell braucht rund 4 Minuten je Seite. Die Denkvariante ist ohne Grafikkarte nicht nutzbar.
+- Einzelheiten und Messbedingungen: [BENCHMARK.md](BENCHMARK.md#6-lokale-ki-echte-messung-auf-cpu).
 - Auf Mac mit Apple Silicon und auf Windows mit Grafikkarte wurde **nichts gemessen**. Bitte vor dem produktiven Einsatz auf dem eigenen Rechner messen (Abschnitt 10).
 
 ---
@@ -210,14 +223,14 @@ Rückgabewert: 0 = in Ordnung (auch wenn Sie etwas bewusst übersprungen haben),
 
 ```bash
 ollama pull glm-ocr        # aktives Modell (2,66 GB)
-ollama pull qwen3-vl:4b    # Ausweichmodell (3,34 GB)
+ollama pull qwen3-vl:4b-instruct    # Ausweichmodell (3,34 GB)
 ollama pull gemma4:e4b     # nur für die Gegenprüfung (6,58 GB, Profil „maximal“)
 ollama list                # was ist vorhanden?
-ollama run qwen3-vl:4b     # kurzer Test im Chat, beenden mit /bye
+ollama run qwen3-vl:4b-instruct     # kurzer Test im Chat, beenden mit /bye
 ```
 
 - Lokale Adresse von Ollama: `http://localhost:11434` (die App nutzt `http://127.0.0.1:11434`, das ist derselbe Rechner).
-- Modell entfernen: `ollama rm qwen3-vl:4b` – oder in der App in der Tabelle „Lokale KI-Modelle“ „Entfernen …“ (mit Rückfrage). Vorgänge und Dokumente bleiben erhalten.
+- Modell entfernen: `ollama rm qwen3-vl:4b-instruct` – oder in der App in der Tabelle „Lokale KI-Modelle“ „Entfernen …“ (mit Rückfrage). Vorgänge und Dokumente bleiben erhalten.
 - Modellordner: macOS `~/.ollama/models`, Windows `C:\Users\<Name>\.ollama\models`. Anderer Ort über die Umgebungsvariable `OLLAMA_MODELS`.
 
 **Ohne Internet:** Alles funktioniert weiter. Sind die Modelle einmal geladen, arbeitet auch die lokale KI offline. Nur der Download braucht Internet.
@@ -263,7 +276,7 @@ Die App lehnt deshalb Modellnamen ab, die den Bestandteil `cloud` enthalten (z. 
 | **„Lokale KI aktivieren“** | Erst dann darf die App den lokalen Ollama-Dienst nutzen. |
 | **„★ Empfehlung für dieses Gerät“** und **„Profil „…“ übernehmen“** | Vorschlag anhand von Arbeitsspeicher und Speicherplatz (Abschnitt 4.1). Übernehmen setzt die drei Modelle des Profils, lädt aber nichts herunter. |
 | **„Aktives Modell“** | Läuft zuerst. Sie entscheiden. Voreinstellung `glm-ocr`. |
-| **„Ausweichmodell“** | Springt ein, wenn das aktive Modell fehlt oder bei einem Dokument nichts liefert. Voreinstellung `qwen3-vl:4b`. Wählen Sie dasselbe Modell wie bei „Aktives Modell“, bleibt das Ausweichmodell leer. |
+| **„Ausweichmodell“** | Springt ein, wenn das aktive Modell fehlt oder bei einem Dokument nichts liefert. Voreinstellung `qwen3-vl:4b-instruct`. Wählen Sie dasselbe Modell wie bei „Aktives Modell“, bleibt das Ausweichmodell leer. |
 | **„Gegenprüfung“** | Optional, z. B. `gemma4:e4b`. Leer = keine Gegenprüfung. |
 | Tabelle **„Lokale KI-Modelle“** mit **„Herunterladen …“** / **„Entfernen …“** | Je Modell: Aufgabe, Vorteil, Download, Lizenz, installiert ja/nein. Download nur nach Platzprüfung und ausdrücklicher Zustimmung, Entfernen nur nach Rückfrage. |
 | **„Status prüfen“** | Fragt den lokalen Ollama-Dienst (127.0.0.1), ob er läuft und welche Modelle vorhanden sind. |
@@ -275,7 +288,7 @@ Die App lehnt deshalb Modellnamen ab, die den Bestandteil `cloud` enthalten (z. 
 | „Lokale KI ist ausgeschaltet – die App arbeitet mit Textebene und Tesseract.“ | KI aus. | Nichts – oder aktivieren. |
 | „Der lokale Ollama-Dienst läuft nicht.“ | Ollama nicht gestartet. | Ollama öffnen, erneut testen. |
 | „Bereit: glm-ocr ist aktiv.“ | Alles in Ordnung. | „Lokale KI-Zweitprüfung“ im Vorgang nutzen. |
-| „glm-ocr fehlt – das Ausweichmodell qwen3-vl:4b wird verwendet.“ | Aktives Modell nicht geladen. | Aktives Modell herunterladen – oder so lassen. |
+| „glm-ocr fehlt – das Ausweichmodell qwen3-vl:4b-instruct wird verwendet.“ | Aktives Modell nicht geladen. | Aktives Modell herunterladen – oder so lassen. |
 | „Weder das aktive noch das Ausweichmodell ist heruntergeladen.“ | Keine KI nutzbar. | Modell herunterladen. |
 | „Lokale KI nicht installiert“ | Ollama wurde nicht gefunden. | Ollama installieren (Abschnitt 5.1). |
 | „Modell wird eingerichtet“ | Download läuft. | Warten oder abbrechen. |
@@ -287,7 +300,7 @@ Die App lehnt deshalb Modellnamen ab, die den Bestandteil `cloud` enthalten (z. 
 | `ai_enabled` | `false` | Lokale KI an/aus |
 | `ai_profile` | `standard` | Gewähltes Profil (nur Empfehlung) |
 | `ai_model` | `glm-ocr` | Aktives Modell |
-| `ai_fallback_model` | `qwen3-vl:4b` | Ausweichmodell |
+| `ai_fallback_model` | `qwen3-vl:4b-instruct` | Ausweichmodell |
 | `ai_crosscheck_model` | leer (`null`) | Gegenprüfung |
 | `ollama_url` | `http://127.0.0.1:11434` | Adresse von Ollama. Erlaubt sind nur Adressen auf dem eigenen Rechner. |
 | `ai_timeout_s` | `600` | Zeitlimit je Seite in Sekunden |
@@ -302,7 +315,7 @@ Die App lehnt deshalb Modellnamen ab, die den Bestandteil `cloud` enthalten (z. 
 | „Der lokale Ollama-Dienst läuft nicht.“ | Ollama öffnen (macOS: Programme → Ollama; Windows: Startmenü → Ollama) oder im Terminal `ollama serve`. Dann „Status prüfen“. |
 | „Lokale KI nicht installiert“, obwohl Ollama installiert ist | Ollama liegt an einem unüblichen Ort und läuft nicht. Ollama starten – dann erkennt die App es über die lokale Adresse. |
 | „Die eingestellte Ollama-Adresse zeigt nicht auf diesen Rechner.“ | In `settings.json` `ollama_url` auf `http://127.0.0.1:11434` setzen. |
-| „Cloud-Modelle sind nicht erlaubt …“ | Gewollt. Einen lokalen Modellnamen wählen, z. B. `qwen3-vl:4b`. |
+| „Cloud-Modelle sind nicht erlaubt …“ | Gewollt. Einen lokalen Modellnamen wählen, z. B. `qwen3-vl:4b-instruct`. |
 | Download bricht ab oder stockt | Internetverbindung prüfen. Hinter einem Firmen-Proxy braucht **Ollama** die Variable `HTTPS_PROXY` (laut Ollama-Dokumentation; `HTTP_PROXY` vermeiden). Die App selbst lädt nichts. Erneut starten; geladene Teile bleiben. |
 | Download meldet, dass eine neuere Ollama-Version nötig ist | Ollama aktualisieren (für `glm-ocr` und `qwen3-vl:4b` mindestens 0.30.0). |
 | Sehr langsam | `ollama ps` prüfen: Steht bei `PROCESSOR` nicht „100% GPU“, rechnet der Prozessor mit. Kleineres Profil wählen, andere Programme schließen. Ohne Grafikkarte ist das normal (siehe [BENCHMARK.md](BENCHMARK.md)). |
@@ -323,8 +336,8 @@ Die App lehnt deshalb Modellnamen ab, die den Bestandteil `cloud` enthalten (z. 
 | Bildextraktion (Auftrag, JSON-Schema, Zitatpflicht, Ablehnung von Auftragsdaten und rechtlichen Feldern) | umgesetzt, automatisch getestet |
 | Abgleich mit OCR-Werten (Konflikt statt Überschreiben) | umgesetzt, automatisch getestet |
 | Automatische Tests | gegen einen **simulierten** Ollama-Server (`tests/test_local_ai/lai_fake_ollama.py`). Geprüft werden Protokoll, Fehlerbehandlung und Schutzregeln – **nicht** die Erkennungsqualität. |
-| Echtes Ollama | In der Build-Umgebung: Ollama 0.40.16, nur Prozessor, `glm-ocr` und `qwen3-vl:4b` heruntergeladen. `gemma4:e4b` wurde dort nicht geladen. |
-| Laufzeit und Genauigkeit | **nur** in [BENCHMARK.md](BENCHMARK.md) |
+| Echtes Ollama | In der Build-Umgebung: Ollama 0.40.16, nur Prozessor, `glm-ocr`, `qwen3-vl:4b-instruct` und `qwen3-vl:4b` heruntergeladen und an einem synthetischen Scan gemessen. `gemma4:e4b` wurde dort nicht geladen. |
+| Laufzeit und Genauigkeit | auf CPU gemessen (Abschnitt 4.3), Einzelheiten in [BENCHMARK.md](BENCHMARK.md). Mit Grafikkarte: **nicht gemessen**. |
 | macOS-Skript | Syntax geprüft (`bash -n`). Auf Linux im Testlauf (`--dry-run`) und mit nachgebildeten macOS-Befehlen durchgespielt. **Nicht auf einem echten Mac ausgeführt.** |
 | Windows-Skript | **Nicht ausgeführt** – PowerShell war in der Build-Umgebung nicht installiert. Geprüft wurden nur: reine ASCII-Zeichen und geschlossene Klammern. |
 | Modellgrößen, Lizenzangaben | aus den Ollama-Registry-Manifesten (13.11.2026); `glm-ocr` und `qwen3-vl:4b` zusätzlich mit `ollama show` und `ollama list` geprüft |

@@ -8,8 +8,8 @@
 #
 # Profile (Quelle: src/insurance_app/local_ai/profiles.py):
 #   kompakt  = glm-ocr
-#   standard = glm-ocr + qwen3-vl:4b          (empfohlen)
-#   maximal  = glm-ocr + qwen3-vl:4b + gemma4:e4b
+#   standard = glm-ocr + qwen3-vl:4b-instruct          (empfohlen)
+#   maximal  = glm-ocr + qwen3-vl:4b-instruct + gemma4:e4b
 #
 # Grundsätze:
 #   * Nichts geschieht ohne Rückfrage (j/N). Standardantwort ist immer „Nein“.
@@ -24,7 +24,7 @@ OLLAMA_URL="http://127.0.0.1:11434"
 SERVER_JSON="$HOME/.ollama/server.json"
 SERVER_LOG="$HOME/.ollama/logs/server.log"
 MODELS_DIR="${OLLAMA_MODELS:-$HOME/.ollama/models}"
-MIN_OLLAMA_VERSION="0.30.0" # laut „ollama show glm-ocr“ bzw. „qwen3-vl:4b“ (Feld „requires“), 13.11.2026
+MIN_OLLAMA_VERSION="0.30.0" # laut „ollama show glm-ocr“ bzw. „qwen3-vl:4b-instruct“ (Feld „requires“), 13.11.2026
 
 PROFILE=""
 INSTALL_OLLAMA=0
@@ -111,8 +111,8 @@ version_lt() {
 profile_models() {
   case "$1" in
     kompakt) echo "glm-ocr" ;;
-    standard) echo "glm-ocr qwen3-vl:4b" ;;
-    maximal) echo "glm-ocr qwen3-vl:4b gemma4:e4b" ;;
+    standard) echo "glm-ocr qwen3-vl:4b-instruct" ;;
+    maximal) echo "glm-ocr qwen3-vl:4b-instruct gemma4:e4b" ;;
   esac
 }
 profile_min_ram() { case "$1" in kompakt) echo 8 ;; standard) echo 16 ;; maximal) echo 16 ;; esac }
@@ -131,7 +131,7 @@ profile_lower() { case "$1" in maximal) echo standard ;; *) echo kompakt ;; esac
 model_size() {
   case "$1" in
     glm-ocr) echo "2,66 GB" ;;
-    qwen3-vl:4b) echo "3,34 GB" ;;
+    qwen3-vl:4b-instruct) echo "3,34 GB" ;;
     gemma4:e4b) echo "6,58 GB" ;;
     *) echo "unbekannt" ;;
   esac
@@ -139,14 +139,14 @@ model_size() {
 model_role() {
   case "$1" in
     glm-ocr) echo "Aktives Modell: liest schwierige Scans, Fotos und Tabellen als Text" ;;
-    qwen3-vl:4b) echo "Ausweichmodell: liest Felder direkt aus dem Seitenbild (mit wörtlichem Zitat)" ;;
+    qwen3-vl:4b-instruct) echo "Ausweichmodell ohne Denkphase: liest Felder direkt aus dem Seitenbild (mit wörtlichem Zitat)" ;;
     gemma4:e4b) echo "Gegenprüfung: unabhängige zweite Meinung, Abweichung = Konflikt" ;;
   esac
 }
 model_license() {
   case "$1" in
     glm-ocr) echo "keine Lizenzangabe im Ollama-Manifest – beim Anbieter Z.ai prüfen" ;;
-    qwen3-vl:4b | gemma4:e4b) echo "Apache 2.0 (laut Ollama-Manifest)" ;;
+    qwen3-vl:4b-instruct | gemma4:e4b) echo "Apache 2.0 (laut Ollama-Manifest)" ;;
   esac
 }
 
@@ -572,7 +572,9 @@ Nächste Schritte in der App:
   „Einstellungen & Datenschutz“ → „Lokale KI (optional)“
   → Profil „$PROFILE“ übernehmen (oder unter „Modellauswahl“: „Aktives Modell“, „Ausweichmodell“, „Gegenprüfung“)
   → „Lokale KI aktivieren“ → „Status prüfen“.
-Optional im Terminal ausprobieren (Beenden mit /bye):  ollama run qwen3-vl:4b
+Optional im Terminal ausprobieren (Beenden mit /bye):  ollama run qwen3-vl:4b-instruct
+Hinweis: Die Denkvariante „qwen3-vl:4b“ ist langsamer und wird nicht automatisch geladen.
+  Sie lohnt sich höchstens auf sehr schnellen Rechnern und ist in der App frei wählbar.
 Anleitung: docs/LOKALE_KI.md
 EOF
 exit 0

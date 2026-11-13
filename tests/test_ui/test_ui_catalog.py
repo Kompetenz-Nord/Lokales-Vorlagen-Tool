@@ -146,6 +146,9 @@ def test_catalog_screenshot(qtbot, tmp_path, monkeypatch):
         assert page.tiles[SL13065].use_button.isEnabled()
         qtbot.waitUntil(lambda: page.tiles[SL13065].isVisible(), timeout=5_000)  # Anzeige erfolgt verzögert
         qtbot.wait(50)
+        # Beide Spalten passen in die Breite: kein waagerechter Rollbalken, keine abgeschnittene Karte
+        assert page.scroll.horizontalScrollBar().maximum() == 0
+        assert all(t.width() <= page.scroll.viewport().width() // 2 for t in page.tiles.values())
         image = host.grab()
         assert not image.isNull()
         target = screenshot_dir()

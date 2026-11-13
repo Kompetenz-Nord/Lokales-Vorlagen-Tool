@@ -25,6 +25,11 @@ def create_application(argv: list[str] | None = None):
     font.setPointSizeF(10.5)
     app.setFont(font)
     app.setAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus, False)
+    # Speicherbereinigung nur im Fenster-Thread: verhindert Abstürze durch Qt-Objekte,
+    # die sonst in einem Worker-Thread freigegeben würden (siehe ui/gc_guard.py).
+    from .gc_guard import install_main_thread_gc
+
+    install_main_thread_gc(app)
     return app
 
 

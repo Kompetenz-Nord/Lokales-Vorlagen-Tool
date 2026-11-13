@@ -137,7 +137,7 @@ Schritt für Schritt: [docs/BEDIENUNG.md – Kundenmappe](docs/BEDIENUNG.md#3-ku
 | Profil | Modelle | Download | Passt zu (Richtwerte, nicht auf Zielgeräten gemessen) |
 |---|---|---|---|
 | kompakt | `glm-ocr` | 2,66 GB | ab 8 GB Arbeitsspeicher; Mac mit Apple Silicon oder 64-Bit-Windows (Grafikkarte nicht erforderlich) |
-| **standard** (empfohlen) | `glm-ocr` + `qwen3-vl:4b` | 6,00 GB | 16 GB; Mac mit Apple Silicon oder PC mit NVIDIA-Grafikkarte (6–8 GB Grafikspeicher) |
+| **standard** (empfohlen) | `glm-ocr` + `qwen3-vl:4b-instruct` | 6,00 GB | 16 GB; Mac mit Apple Silicon oder PC mit NVIDIA-Grafikkarte (6–8 GB Grafikspeicher) |
 | maximal | zusätzlich `gemma4:e4b` | 12,58 GB | 32 GB; Mac M-Pro/Max oder PC mit NVIDIA-Grafikkarte (12 GB Grafikspeicher) |
 
 Einrichten – das Skript prüft den Rechner, schlägt ein Profil vor und fragt vor jedem Schritt:
@@ -156,9 +156,9 @@ Oder von Hand, wenn Ollama schon installiert ist:
 
 ```bash
 ollama pull glm-ocr
-ollama pull qwen3-vl:4b
+ollama pull qwen3-vl:4b-instruct
 ollama pull gemma4:e4b      # nur für die Gegenprüfung
-ollama run qwen3-vl:4b      # kurzer Test im Chat, beenden mit /bye
+ollama run qwen3-vl:4b-instruct      # kurzer Test im Chat, beenden mit /bye
 ```
 
 Danach in der App: „Einstellungen & Datenschutz“ → „Lokale KI (optional)“ → Profil übernehmen (z. B. „Profil „Standard“ übernehmen“) → in der Tabelle „Lokale KI-Modelle“ je Modell „Herunterladen …“ (nur nach ausdrücklicher Zustimmung) → „Lokale KI aktivieren“ → „Status prüfen“. Unter „Modellauswahl“ legen Sie fest, welches Modell aktiv läuft („Aktives Modell“, „Ausweichmodell“, „Gegenprüfung“).

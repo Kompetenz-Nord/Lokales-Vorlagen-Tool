@@ -24,12 +24,12 @@ src/insurance_app/
   templates/    Vorlagenkatalog (9 Einträge), Schema, Registry (Status/Version/Import/Paket), Werteauflösung (FillPlan)
   pdf/          AcroForm-Inspektion, TemplateFiller (nativ + Overlay-Fallback), Rendering (MuPDF + PDFium), Qualitätskontrolle
   export/       Dateinamen, Export nach bestandener QA, Exportprotokoll ohne Personendaten
-  storage/      SQLite (Vorgänge, Dokumente, Verlauf, Exportprotokoll, Vorlagenversionen)
-  security/     Log-Schwärzung, Netzwerk-Wächter, temporäre Arbeitsordner
-  local_ai/     Optional: Ollama-Client (nur Loopback), VLM-Extraktion mit JSON-Schema, Abgleich -> CONFLICT
+  storage/      SQLite (Vorgänge, Kundenmappen, Dokumente, Verlauf, Exportprotokoll, Vorlagenversionen), Schema-Version 3
+  security/     Log-Schwärzung, Netzwerk-Wächter, temporäre Arbeitsordner, Sperre gegen einen zweiten App-Start
+  local_ai/     Optional: Ollama-Client (nur Loopback), Modellkatalog und Hardware-Profile, GLM-OCR-Text, VLM-Extraktion mit JSON-Schema, Abgleich -> CONFLICT
   letters/      Generierte Kundenschreiben nach DIN 5008 (Textbausteine, Plausibilität, Renderer, Brief-QA)
   samples/      Musterfall-Generator (synthetisch, „MUSTER – KEINE ECHTDATEN“) und Benchmark-Varianten
-  ui/           PySide6-Oberfläche (Dashboard, Vorgang mit 9 Stufen, Vorlagen, Vorlagen-Studio, Einstellungen)
+  ui/           PySide6-Oberfläche (Dashboard, Vorgang mit 9 Stufen, Kundenmappen, Vorlagen, Vorlagen-Studio, Einstellungen)
 ```
 
 Abhängigkeitsrichtung: `ui → core.service → (documents, ocr, extraction, validation, templates, pdf, export, storage, local_ai) → core.models`. Fachmodule importieren **nie** `ui`.
@@ -103,11 +103,20 @@ Technische Details:
 * Temporäre Dateien liegen in einem Arbeitsordner je Job. Sie werden nach Abschluss oder Abbruch gelöscht; beim Start räumt die App Reste auf.
 * Passwörter für PDFs fragt nur ein Dialog ab (`QLineEdit.Password`). Sie werden weder gespeichert noch protokolliert.
 
-## 8. Lokale KI (Release 2, als Modul angelegt)
+## 8. Lokale KI (optional)
 
-* `local_ai/ollama_client.py`: HTTP nur an Loopback (geprüft vor jedem Aufruf). Modell-Download nur mit `user_consented=True`.
-* `local_ai/vlm_extractor.py`: eng begrenzter Prompt, JSON-Schema über Ollamas `format`, `temperature=0`, `num_predict`-Limit, Timeout. Dokumentinhalt gilt als nicht vertrauenswürdige Daten.
-* Statusanzeige: `Lokale KI nicht installiert`, `Modell wird eingerichtet`, `Bereit`, `Fehler`.
+* `local_ai/ollama_client.py`: HTTP nur an Loopback (geprüft vor jedem Aufruf). Modell-Download nur mit `user_consented=True`. Modellnamen mit `:cloud` werden abgelehnt. `unload_model` entlädt ein Modell nach Gebrauch (`keep_alive: 0`).
+* `local_ai/status.py`: Modellkatalog (`MODEL_CATALOG`) mit Rolle, Größe, Kontextlänge und Kennzeichnung von Denkvarianten. `local_ai/profiles.py`: Profile `kompakt`, `standard`, `maximal` und Profilvorschlag aus Arbeitsspeicher und freiem Speicherplatz.
+* **Rollen** (der Anwender wählt sie in den Einstellungen):
+
+  | Rolle | Voreinstellung | Arbeitsweise |
+  |---|---|---|
+  | Aktives Modell | `glm-ocr` | liest die Seite als Text (`local_ai/ollama_ocr.py`); danach ordnen die normalen Regeln der App die Felder zu |
+  | Ausweichmodell | `qwen3-vl:4b-instruct` | liest Felder direkt aus dem Seitenbild als JSON mit wörtlichem Zitat (`local_ai/vlm_extractor.py`); nur für Dokumente, bei denen das aktive Modell nichts liefert |
+  | Gegenprüfung | keine (`gemma4:e4b` im Profil „maximal“) | liest alle Dokumente unabhängig ein zweites Mal |
+
+* **Ablauf** (`AppService.run_local_ai`): Ein Modell bearbeitet alle Dokumente und wird dann entladen, erst danach folgt das nächste. Je Bildanfrage 8.192 Token Kontext, Temperatur 0, festes JSON-Schema, Zeitlimit `ai_timeout_s` (600 s).
+* **Abgleich** (`local_ai/reconcile.py`): Die KI überschreibt nie. Ein abweichender Wert erzeugt einen `CONFLICT`, auch wenn der bisherige Wert nur „Unklar“ war. Auftragsdaten und rechtlich relevante Felder liest die KI nicht.
 
 ## 9. Zentrale Steuerung (`core/service.py`)
 
@@ -117,6 +126,9 @@ Technische Details:
 - **Stufen:** `add_document` → `recognize_text` / `extract_data` (bzw. `process_documents`) → Nutzeraktionen (`confirm_field`, `edit_field`, `set_choice`, `choose_candidate`, `mark_unclear`, `mark_not_applicable`) → `select_template` → `review_status` → `build_preview` → `generate_pdf`.
 - **Vorlagenwahl:** jederzeit möglich. `review_status` liefert die für die Vorlage benötigten Felder. Nicht benötigte Angaben, z. B. der Abschlussvermittler, müssen nicht bestätigt werden.
 - **Lange Schritte:** laufen in Worker-Threads der Oberfläche und sind über `threading.Event` abbrechbar.
+- **Kundenmappen:** `create_bundle` → `import_into_bundle` (Warteschlange: jede Datei wird nacheinander geprüft, gelesen und über die Vertragsnummer einem Vorgang zugeordnet; ein Nachtrag landet beim passenden Vertrag) → je Vorgang Vorlage wählen und prüfen → `generate_bundle` erzeugt je Vorgang eine Ausgabe. Nicht fertige Vorgänge werden mit Begründung übersprungen, nichts wird halb erzeugt.
+- **Gleichzeitige Änderungen:** Jeder Vorgang trägt eine Revisionsnummer (`Case.revision`). Speichert ein veralteter Stand, meldet das Repository `StaleCaseError`, statt neuere Daten zu überschreiben.
+- **Ein Start je Datenordner:** Eine Sperrdatei verhindert, dass zwei App-Fenster gleichzeitig dieselbe Datenbank ändern.
 
 ## 10. Erweiterbarkeit
 

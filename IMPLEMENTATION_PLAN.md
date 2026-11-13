@@ -59,4 +59,8 @@
 3. Integration: `core/service.py` (AppService) und End-to-End-Test.
 4. **Welle 2 (parallel):** UI, Dokumentation/Build-Skripte, Benchmark, Integrationstests.
 5. **Prüf-Welle:** adversariale Reviews (Korrektheit, Datenschutz, fachliche Schutzregeln, PDF-QA) → Fehlerbehebung.
-6. Abschluss: Testbericht, Beispielexport (synthetisch), Statusübersicht.
+6. **Welle 3 (Ergänzungen des Anwenders):** Kundenmappen mit Warteschlange (mehrere Dokumente, eine Ausgabe je Vertrag und Wunsch), lokale KI mit aktivem Modell, Ausweichmodell und Gegenprüfung, Hardware-Profile, Installationsskripte, echter KI-Lauf auf CPU.
+7. **Welle 4 (Robustheit):** Texterkennung für gedrehte und verrauschte Scans sowie Tabellen, sichere Behandlung typischer Lesefehler, Feinschliff der Bedienung, Benchmark neu gemessen.
+8. Abschluss: Testbericht, Beispielexport (synthetisch), Statusübersicht.
+
+Stand 13.11.2026: Schritte 1–8 sind erledigt. Was offen bleibt, steht in `TASKS.md` unter „Offen (ehrlich)“.

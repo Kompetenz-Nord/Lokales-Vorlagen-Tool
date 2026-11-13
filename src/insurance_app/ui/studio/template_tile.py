@@ -125,9 +125,14 @@ class TemplateTile(QFrame):
             )
             self.import_button.setAccessibleName(f"Originalvorlage für Vorlage {choice.number} importieren")
             self.import_button.clicked.connect(lambda: on_import(choice.catalog_id))
-            buttons.addWidget(self.import_button)
         buttons.addStretch(1)
         layout.addLayout(buttons)
+        if self.import_button is not None:
+            # eigene Zeile: drei Schaltflächen nebeneinander machen die Karte breiter als die Spalte
+            import_row = QHBoxLayout()
+            import_row.addWidget(self.import_button)
+            import_row.addStretch(1)
+            layout.addLayout(import_row)
 
         self.block_reason = muted("")
         self.block_reason.setVisible(False)

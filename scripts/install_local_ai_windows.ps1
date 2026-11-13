@@ -9,8 +9,8 @@
 
   Profile (Quelle: src/insurance_app/local_ai/profiles.py):
     kompakt  = glm-ocr
-    standard = glm-ocr + qwen3-vl:4b          (empfohlen)
-    maximal  = glm-ocr + qwen3-vl:4b + gemma4:e4b
+    standard = glm-ocr + qwen3-vl:4b-instruct          (empfohlen)
+    maximal  = glm-ocr + qwen3-vl:4b-instruct + gemma4:e4b
 
   Grundsaetze:
     * Nichts geschieht ohne Rueckfrage (j/N). Standardantwort ist immer "Nein".
@@ -54,7 +54,7 @@ param(
 $ErrorActionPreference = 'Continue'
 
 $OllamaUrl = 'http://127.0.0.1:11434'
-$MinOllamaVersion = '0.30.0'   # laut "ollama show glm-ocr" / "qwen3-vl:4b" (Feld "requires"), 13.11.2026
+$MinOllamaVersion = '0.30.0'   # laut "ollama show glm-ocr" / "qwen3-vl:4b-instruct" (Feld "requires"), 13.11.2026
 $UserHome = $env:USERPROFILE
 if (-not $UserHome) { $UserHome = $HOME }
 $LocalAppData = $env:LOCALAPPDATA
@@ -81,7 +81,7 @@ $Profiles = @{
         Windows = '64-Bit-Windows mit mindestens 8 GB RAM; Grafikkarte nicht erforderlich'
     }
     'standard' = @{
-        Models  = @('glm-ocr', 'qwen3-vl:4b')
+        Models  = @('glm-ocr', 'qwen3-vl:4b-instruct')
         MinRam  = 16
         RecRam  = 16
         Disk    = 8
@@ -89,7 +89,7 @@ $Profiles = @{
         Windows = '16 GB RAM; empfohlen: NVIDIA-Grafikkarte mit mindestens 6-8 GB Grafikspeicher (ohne GPU deutlich langsamer)'
     }
     'maximal'  = @{
-        Models  = @('glm-ocr', 'qwen3-vl:4b', 'gemma4:e4b')
+        Models  = @('glm-ocr', 'qwen3-vl:4b-instruct', 'gemma4:e4b')
         MinRam  = 16
         RecRam  = 32
         Disk    = 16
@@ -105,9 +105,9 @@ $ModelInfo = @{
         Role    = 'Aktives Modell: liest schwierige Scans, Fotos und Tabellen als Text'
         License = 'keine Lizenzangabe im Ollama-Manifest - beim Anbieter Z.ai pruefen'
     }
-    'qwen3-vl:4b' = @{
+    'qwen3-vl:4b-instruct' = @{
         Size    = '3,34 GB'
-        Role    = 'Ausweichmodell: liest Felder direkt aus dem Seitenbild (mit woertlichem Zitat)'
+        Role    = 'Ausweichmodell ohne Denkphase: liest Felder direkt aus dem Seitenbild (mit woertlichem Zitat)'
         License = 'Apache 2.0 (laut Ollama-Manifest)'
     }
     'gemma4:e4b'  = @{
@@ -641,6 +641,8 @@ Write-Host 'Naechste Schritte in der App:'
 Write-Host '  "Einstellungen & Datenschutz" -> "Lokale KI (optional)"'
 Write-Host "  -> Profil '$KiProfil' uebernehmen (oder unter 'Modellauswahl': 'Aktives Modell', 'Ausweichmodell', 'Gegenpruefung')"
 Write-Host '  -> "Lokale KI aktivieren" -> "Status pruefen".'
-Write-Host 'Optional im Terminal ausprobieren (Beenden mit /bye):  ollama run qwen3-vl:4b'
+Write-Host 'Optional im Terminal ausprobieren (Beenden mit /bye):  ollama run qwen3-vl:4b-instruct'
+Write-Host 'Hinweis: Die Denkvariante "qwen3-vl:4b" ist langsamer und wird nicht automatisch geladen.'
+Write-Host '  Sie lohnt sich nur mit Grafikkarte und ist in der App frei waehlbar.'
 Write-Host 'Anleitung: docs\LOKALE_KI.md'
 exit 0

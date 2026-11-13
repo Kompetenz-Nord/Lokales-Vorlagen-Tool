@@ -360,7 +360,7 @@ Hinweis der App: Die App schützt die Daten technisch. Die Verantwortung für de
    | Profil | Modelle | Download | Richtwert Arbeitsspeicher |
    |---|---|---|---|
    | Kompakt | `glm-ocr` | 2,66 GB | ab 8 GB |
-   | Standard (empfohlen) | `glm-ocr` + `qwen3-vl:4b` | 6,00 GB | 16 GB |
+   | Standard (empfohlen) | `glm-ocr` + `qwen3-vl:4b-instruct` | 6,00 GB | 16 GB |
    | Maximal | zusätzlich `gemma4:e4b` | 12,58 GB | 32 GB empfohlen |
 
    Richtwerte, nicht auf Zielgeräten gemessen. **„Profil „Standard“ übernehmen“** (bzw. Kompakt/Maximal) setzt die Modelle des Profils – ohne Download.
@@ -369,11 +369,11 @@ Hinweis der App: Die App schützt die Daten technisch. Die Verantwortung für de
    | Auswahl | Aufgabe | Voreinstellung |
    |---|---|---|
    | **„Aktives Modell“** | Läuft zuerst. | `glm-ocr` – liest schwierige Scans und Tabellen als Text |
-   | **„Ausweichmodell“** | Springt ein, wenn das aktive Modell fehlt oder scheitert. | `qwen3-vl:4b` – liest Felder direkt aus dem Seitenbild |
+   | **„Ausweichmodell“** | Springt ein, wenn das aktive Modell fehlt oder scheitert. | `qwen3-vl:4b-instruct` – liest Felder direkt aus dem Seitenbild |
    | **„Gegenprüfung“** | Optional: liest unabhängig nach. Weicht es ab, entsteht ein Konflikt. | „– keine –“ (im Profil „Maximal“: `gemma4:e4b`) |
 
 3. **Herunterladen.** In der Tabelle **„Lokale KI-Modelle“** (Spalten Modell, Aufgabe, Vorteil, Download, Lizenz, Installiert, Aktion) je Modell **„Herunterladen …“**. Die App prüft zuerst den freien Speicherplatz („Zu wenig Speicherplatz“). Dann zeigt ein Dialog Größe, Speicherplatz und Lizenz. Erst nach dem Häkchen **„Ich stimme dem Download ausdrücklich zu“** startet **„Download starten“**. Den Download führt Ollama aus; die App sendet dabei keine Dokumente. **„Entfernen …“** fragt vorher nach.
-4. **„Lokale KI aktivieren“** anhaken → **„Status prüfen“**. Der Status zeigt z. B. „Bereit: glm-ocr ist aktiv.“ oder „glm-ocr fehlt – das Ausweichmodell qwen3-vl:4b wird verwendet.“
+4. **„Lokale KI aktivieren“** anhaken → **„Status prüfen“**. Der Status zeigt z. B. „Bereit: glm-ocr ist aktiv.“ oder „glm-ocr fehlt – das Ausweichmodell qwen3-vl:4b-instruct wird verwendet.“
 5. Im Vorgang: Reiter „Dokumente“ → **„Lokale KI-Zweitprüfung“**.
 
 Gut zu wissen:
