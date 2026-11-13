@@ -87,6 +87,8 @@ QPushButton[primary="true"] {{
 QPushButton[primary="true"]:hover {{ background: {PRIMARY_DARK}; }}
 QPushButton[primary="true"]:disabled {{ background: #9DB5D6; border-color: #9DB5D6; color: #F2F5F9; }}
 QPushButton[danger="true"] {{ color: {ERROR}; border-color: #E3B4B0; }}
+QPushButton[danger="true"]:disabled {{ color: #9AA4B1; border-color: {BORDER}; background: #EEF1F5; }}
+QPushButton:checked {{ background: #DCE8F7; border-color: {PRIMARY}; color: {PRIMARY_DARK}; font-weight: 600; }}
 QLineEdit, QComboBox, QSpinBox, QTextEdit, QPlainTextEdit {{
     background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 6px; padding: 5px 8px;
 }}

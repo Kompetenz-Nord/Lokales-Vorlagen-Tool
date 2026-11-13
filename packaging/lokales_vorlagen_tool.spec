@@ -15,6 +15,7 @@ datas = [
     (str(ROOT / "assets" / "templates" / "originals"), "assets/templates/originals"),
     (str(ROOT / "assets" / "fonts"), "assets/fonts"),
     (str(ROOT / "config"), "config"),
+    (str(ROOT / "docs"), "docs"),  # Anleitungen (z. B. LOKALE_KI.md, BEDIENUNG.md) für die Hilfe-Schaltflächen
 ]
 icons_dir = ROOT / "assets" / "icons"
 if icons_dir.exists():
@@ -71,6 +72,7 @@ if sys.platform == "darwin":
             "CFBundleDisplayName": "Lokales Vorlagen-Tool",
             "CFBundleShortVersionString": "0.1.0",
             "NSHighResolutionCapable": True,
-            "LSMinimumSystemVersion": "11.0",
+            # PySide6 6.12 liefert macOS-Pakete nur ab macOS 14 (Wheel-Tag macosx_14_0, PyPI geprüft am 13.11.2026)
+            "LSMinimumSystemVersion": "14.0",
         },
     )

@@ -14,6 +14,7 @@ Fehlermeldungen: ``user_message`` der Fachausnahmen wird bevorzugt angezeigt; ke
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from collections.abc import Callable
@@ -100,6 +101,10 @@ def run_task(
     def _finish() -> None:
         _running.discard(task)
         if dialog is not None:
+            # close() löst sonst "canceled" aus und würde einen Abbruch vortäuschen
+            with contextlib.suppress(RuntimeError, TypeError):  # bereits getrennt
+                dialog.canceled.disconnect(task.cancel.set)
+            dialog.reset()
             dialog.close()
             dialog.deleteLater()
 
