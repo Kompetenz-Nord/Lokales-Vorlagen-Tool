@@ -27,7 +27,8 @@ src/insurance_app/
   storage/      SQLite (Vorgänge, Dokumente, Verlauf, Exportprotokoll, Vorlagenversionen)
   security/     Log-Schwärzung, Netzwerk-Wächter, temporäre Arbeitsordner
   local_ai/     Optional: Ollama-Client (nur Loopback), VLM-Extraktion mit JSON-Schema, Abgleich -> CONFLICT
-  samples/      Musterfall-Generator (synthetisch, „MUSTER – KEINE ECHTDATEN“)
+  letters/      Generierte Kundenschreiben nach DIN 5008 (Textbausteine, Plausibilität, Renderer, Brief-QA)
+  samples/      Musterfall-Generator (synthetisch, „MUSTER – KEINE ECHTDATEN“) und Benchmark-Varianten
   ui/           PySide6-Oberfläche (Dashboard, Vorgang mit 9 Stufen, Vorlagen, Vorlagen-Studio, Einstellungen)
 ```
 
@@ -63,6 +64,14 @@ Optional zwischen 3 und 5: **lokale Vision-KI** nur für Seiten mit schlechter O
 * Feldzuordnung `config/field_schemas/*.json` (`TemplateDefinition`/`FieldMapping`): `kind` (text, date_part, amount, checkbox, radio, signature, signature_date …), `source` oder `compose`, `conditions` (UND), `required`, `legal_relevant`, `fill_policy` (`never` für Unterschriften).
 * Vom Anwender importierte Vorlagen werden versioniert unter `user_data/templates/<katalog-id>/<version>/` abgelegt (Original + Mapping). Paketformat: ZIP mit `original.pdf` + `mapping.json` + `manifest.json`.
 
+### Zwei Vorlagenarten
+| Art | Quelle | Befüllung | Status im Katalog |
+|---|---|---|---|
+| **Originalvorlage** (AcroForm-PDF) | Versicherer-Formular, unverändert (`assets/templates/originals` oder importiert) | native Formularfelder, inkrementell | `Aktiv` nach SHA-/Feld-/Rechteprüfung und bestätigter Zuordnung |
+| **Brief nach DIN 5008** (generiert) | Textbausteine `config/letter_templates/*.json` | ReportLab, eingebettete Schrift, Form A/B | `Aktiv`, solange keine eigene Originalvorlage importiert wurde |
+
+Briefe sind Kundenschreiben an den Versicherer – keine nachgebauten Versicherer-Formulare. Die tecis-Haftungsfreistellung (Eintrag 9) wird bewusst nicht generiert (haftungsrelevanter Wortlaut eines Dritten).
+
 ## 6. Befüllung und Qualitätskontrolle
 
 1. `resolve_fill_values()` erzeugt einen `FillPlan`. Er enthält nur freigegebene Werte und eine Checkliste: fehlende Pflichtfelder, unbestätigte Werte, offene rechtliche Auswahlen, Bestätigungen, Plausibilitätswarnungen.
@@ -79,6 +88,14 @@ Optional zwischen 3 und 5: **lokale Vision-KI** nur für Seiten mit schlechter O
 
 „Formularfelder fixieren“ (flach) wird nur angeboten, wenn die PDF-Rechte Änderungen erlauben. Bei den Swiss-Life-Vorlagen ist das nicht der Fall. Sie bleiben daher ausfüllbar, und die Oberfläche begründet das.
 
+Technische Details:
+
+- PyMuPDF setzt beim Aktualisieren eines Textfelds die Schrift auf Helvetica (`/Helv`). Helvetica hat praktisch dieselben Zeichenbreiten wie das im Formular hinterlegte Arial.
+- Die Formular-Ressourcen (`/DR`), die Verschlüsselung und die PDF-Rechte bleiben unverändert.
+- Der Wert eines Betragsfelds (`/V`) wird roh gespeichert (`1234.56`). Angezeigt wird `1.234,56`, passend zum Acrobat-Zahlformat.
+
+**Briefe:** Die Brief-QA (`letters/qa.py`) prüft A4-Format, vorhandene Texte, das Fehlen von Platzhaltern und Vorschau-Wasserzeichen sowie eingebettete Schriften. Außerdem prüft sie, dass die Anschrift im Sichtfenster liegt, genug Platz für die Unterschrift bleibt und die Metadaten keine Personendaten enthalten. Beide Renderer müssen die Datei darstellen können.
+
 ## 7. Datenschutz-Architektur
 
 * Laufzeitdaten liegen nur lokal: `user_data/` (SQLite, Vorgangsordner, Logs, tmp) und `exports/`.
@@ -92,7 +109,16 @@ Optional zwischen 3 und 5: **lokale Vision-KI** nur für Seiten mit schlechter O
 * `local_ai/vlm_extractor.py`: eng begrenzter Prompt, JSON-Schema über Ollamas `format`, `temperature=0`, `num_predict`-Limit, Timeout. Dokumentinhalt gilt als nicht vertrauenswürdige Daten.
 * Statusanzeige: `Lokale KI nicht installiert`, `Modell wird eingerichtet`, `Bereit`, `Fehler`.
 
-## 9. Erweiterbarkeit
+## 9. Zentrale Steuerung (`core/service.py`)
+
+`AppService` ist die einzige Schnittstelle der Oberfläche. Zuständigkeiten:
+
+- **Start:** Netzwerk-Wächter, Logging, Aufräumen alter Temp-Ordner, Datenbank, Registry und OCR-Backends. Tesseract wird auch ohne PATH gefunden (macOS-Homebrew, Windows Program Files).
+- **Stufen:** `add_document` → `recognize_text` / `extract_data` (bzw. `process_documents`) → Nutzeraktionen (`confirm_field`, `edit_field`, `set_choice`, `choose_candidate`, `mark_unclear`, `mark_not_applicable`) → `select_template` → `review_status` → `build_preview` → `generate_pdf`.
+- **Vorlagenwahl:** jederzeit möglich. `review_status` liefert die für die Vorlage benötigten Felder. Nicht benötigte Angaben, z. B. der Abschlussvermittler, müssen nicht bestätigt werden.
+- **Lange Schritte:** laufen in Worker-Threads der Oberfläche und sind über `threading.Event` abbrechbar.
+
+## 10. Erweiterbarkeit
 
 * **Neuer Versicherer/Vorlage:** Original-PDF im Vorlagen-Studio importieren, automatisch erkannte Felder zuordnen, Zuordnung bestätigen. Danach ist die Vorlage `Aktiv`. Kein Code nötig.
 * **Neues Feld:** Eintrag in `core/fields.py` plus Label-Synonyme in `extraction/rules.py`.
