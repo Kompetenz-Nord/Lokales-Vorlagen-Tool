@@ -11,7 +11,7 @@
 | Version | 0.1.0 (Release 1) |
 | Getestet | nur unter **Linux** (Ubuntu 24.04, Python 3.13, PySide6 6.12, Tesseract 5.3.4) |
 | Windows / macOS | Einrichtungs- und Build-Skripte sind vorhanden, wurden aber **noch nicht** auf diesen Systemen ausgeführt |
-| Tests | 1004 automatische Tests ohne die langsamen Tests bestanden (Lauf am 13.11.2026, `-m "not slow"`). Aktueller Stand: [docs/TESTBERICHT.md](docs/TESTBERICHT.md) |
+| Tests | 1385 automatische Tests bestanden, 0 fehlgeschlagen (Lauf am 13.11.2026, inklusive der langsamen Tests). Einzelheiten: [docs/TESTBERICHT.md](docs/TESTBERICHT.md) |
 | Lizenz | Unlicense (siehe `LICENSE`); Schrift Liberation Sans unter SIL Open Font License |
 
 ![Dashboard mit Ablagefläche und Vorgangsliste](docs/images/ui_dashboard.png)

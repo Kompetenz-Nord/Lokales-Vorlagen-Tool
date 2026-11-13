@@ -10,7 +10,7 @@ Legende: `[x]` erledigt und getestet · `[~]` in Arbeit · `[ ]` offen · `[!]` 
 - [x] Vorlagenschema + Katalog (9 Einträge) + Feldzuordnungen beider Swiss-Life-Vorlagen (vollständig gegen PDF validiert)
 - [x] ARCHITECTURE.md, IMPLEMENTATION_PLAN.md, TASKS.md
 
-## Welle 1 (abgeschlossen, 960 Tests grün)
+## Welle 1 (abgeschlossen)
 - [x] A – Dokumentcheck, Klassifikation, Textebene, Tesseract-OCR (ohne Temp-Dateien), Seitenqualität
 - [x] B – Normalisierung, Positions-Extraktion, Regeln, Zusammenführung/Konflikte, Validierung, Musterfall-Generator
 - [x] C – AcroForm-Inspektion, Werteauflösung, TemplateFiller, QA (MuPDF + PDFium), Registry, Export

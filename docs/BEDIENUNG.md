@@ -148,6 +148,8 @@ Beim **Entfernen** oder **Ausschließen** einer Datei setzt die App Werte zurüc
 
 **Checkliste und Hinweise.** Rechts unter dem Beleg zeigt die **Checkliste** alle offenen Punkte: „✖ offen“ (blockiert den Export), „⚠ Hinweis“, „ℹ Info“. Ein Doppelklick springt zum Feld. Sind alle Pflichtpunkte erledigt, steht dort „✔ Alle Pflichtangaben vollständig“. Plausibilitätswarnungen (z. B. „Das Geburtsdatum ist unplausibel …“) sind Hinweise – prüfen Sie den Wert, blockiert wird nur bei eindeutigen Widersprüchen. Wurde die Vorlage seit Ihrer Auswahl geändert (neue Version), meldet die Checkliste „Die Vorlage wurde inzwischen geändert (neue Version). Bitte die Vorlage erneut auswählen.“
 
+**Pflicht oder optional?** Bei den Auftragsdaten steht an jedem Feld, ob es gebraucht wird: „✱ Pflichtangabe“ (ohne sie wird kein PDF erzeugt), „◐ Pflichtangabe je nach Auswahl“ (hängt von einer anderen Entscheidung ab) oder „○ optional“.
+
 ### 2.3 Reiter „Vorschau & Export“
 
 ![Vorschau und Export](images/ui_case_preview.png)
@@ -333,6 +335,10 @@ Hier richten Sie neue Originalvorlagen ein: **„Originalvorlage importieren …
 
 Die mitgelieferten Swiss-Life-Zuordnungen sind nur lesbar. „Bearbeiten (eigene Kopie)“ legt eine eigene Kopie an.
 
+**„Importierte Version entfernen“** löscht eine selbst importierte Vorlagenversion nach einer Rückfrage. Mitgelieferte Originale lassen sich nicht entfernen. Bereits erzeugte PDFs bleiben unverändert. Vorgänge, die diese Version nutzten, zeigen danach einen Hinweis und müssen neu geprüft werden.
+
+Schneller Einstieg: Fehlt bei einem Eintrag die Originalvorlage, führt im Katalog („Vorlagen & Formulare“) die Schaltfläche **„Originalvorlage importieren …“** direkt hierher. Der Eintrag ist dann schon ausgewählt.
+
 Schritt für Schritt: [FEHLENDE_VORLAGEN.md, Abschnitt 3](FEHLENDE_VORLAGEN.md#3-so-importieren-sie-ein-original-im-vorlagen-studio).
 
 ---
@@ -348,6 +354,8 @@ Schritt für Schritt: [FEHLENDE_VORLAGEN.md, Abschnitt 3](FEHLENDE_VORLAGEN.md#3
 | **Lokale KI (optional)** | „Lokale KI aktivieren“, „Status prüfen“, Hardware mit „★ Empfehlung für dieses Gerät“, Profile, „Modellauswahl“ („Aktives Modell“, „Ausweichmodell“, „Gegenprüfung“), Tabelle „Lokale KI-Modelle“ mit „Herunterladen …“ und „Entfernen …“. Siehe Abschnitt 9.1 und [LOKALE_KI.md](LOKALE_KI.md). |
 | **Export** | „Formularfelder standardmäßig fixieren (wenn die Vorlage es erlaubt)“; Briefaufbau nach DIN 5008: Form A (kleiner Briefkopf) oder Form B (großer Briefkopf, Standard). |
 | **Exportprotokoll** | Jeder Export mit Zeit, Vorgang, Vorlage, Version, Datei, Fixiert, QA – ohne Personendaten. |
+
+**Warnung bei Cloud-Ordnern:** Liegt der gewählte Exportordner vermutlich in einem Cloud-Ordner (z. B. OneDrive, iCloud Drive, Dropbox, Google Drive, Nextcloud), warnt die App und fragt nach. Der Grund: Das Betriebssystem oder das Sync-Programm lädt Dateien aus solchen Ordnern automatisch hoch. Die App selbst sendet nichts.
 
 Hinweis der App: Die App schützt die Daten technisch. Die Verantwortung für den datenschutzkonformen Einsatz (z. B. Verarbeitungsverzeichnis, Löschfristen) liegt beim Betreiber. Mehr dazu: [DATENSCHUTZ.md](DATENSCHUTZ.md).
 
@@ -396,7 +404,7 @@ Gut zu wissen:
 | Wo finde ich die fertige PDF? | Im Exportordner. „Ordner öffnen“ nach dem Export oder unter „Einstellungen & Datenschutz“. |
 | Warum ist das Unterschriftsdatum leer? | Absichtlich. Unterschrift und Datum ergänzen Sie bei der Unterschrift von Hand. |
 | Kann ich einen Vorgang später fortsetzen? | Ja. Vorgänge werden laufend gespeichert und lassen sich nach einem Neustart im Dashboard öffnen. |
-| Ein passwortgeschütztes PDF lässt sich nach dem Neustart nicht mehr anzeigen. | Die App speichert Passwörter nie. Erkannte Werte bleiben erhalten. Für Seitenansicht oder neue Texterkennung: Datei entfernen und erneut hinzufügen (mit Passwort). Werte, die aus dieser Datei bestätigt waren, müssen Sie danach erneut bestätigen. |
+| Warum fragt die App nach einem Neustart erneut nach dem PDF-Passwort? | Die App speichert Passwörter nie. Erkannte Werte bleiben erhalten. Für die Seitenansicht oder eine neue Texterkennung fragt sie das Passwort deshalb noch einmal ab. Es bleibt nur bis zum Beenden der App im Arbeitsspeicher. |
 | Prüft die App Fristen oder ob eine Kündigung zulässig ist? | Nein. Hinweise zu Fristen sind prüfbedürftig und keine Rechtsberatung. |
 | Kann ich mehrere Verträge einer Kundin auf einmal bearbeiten? | Ja, mit einer Kundenmappe (Abschnitt 3). Je Vertrag entsteht ein Vorgang; Anwenderwunsch und Prüfung erfolgen je Vertrag. |
 | Warum hat „Alle fertigen erzeugen“ einen Vertrag übersprungen? | Es fehlt der Anwenderwunsch oder es sind Pflichtpunkte offen. Die Begründung steht in der Ergebnisliste. Vorgang öffnen und die Checkliste abarbeiten. |
