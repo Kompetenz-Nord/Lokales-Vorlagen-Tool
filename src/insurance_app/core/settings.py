@@ -37,7 +37,7 @@ class Settings(BaseModel):
     ai_crosscheck_model: str | None = None  # optionale Gegenprüfung (z. B. gemma4:e4b)
     ollama_url: str = DEFAULT_OLLAMA_URL
     ai_timeout_s: int = 600  # je Seite; auf reinen CPU-Rechnern brauchen Bildmodelle oft mehrere Minuten
-    ai_max_tokens: int = 1024
+    ai_max_tokens: int = 2048
 
     # Export
     export_dir: str | None = None  # None -> AppPaths.exports

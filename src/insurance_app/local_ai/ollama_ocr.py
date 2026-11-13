@@ -22,6 +22,7 @@ from PIL import Image
 
 from ..core.models import BoundingBox, ExtractionMethod, PageQuality, PageText, TextLayerOrigin, Word
 from ..core.settings import Settings
+from ..core.textutil import fold
 from .ollama_client import OllamaClient, OllamaError
 from .status import MODEL_CATALOG
 from .vlm_extractor import encode_image
@@ -37,6 +38,47 @@ _MD_PREFIX = re.compile(r"^\s*(?:#{1,6}\s+|[-*]\s+|>\s+)")
 _HTML_TAG = re.compile(r"</?(?:table|thead|tbody|tr|td|th|br|p|div|span)[^>]*>", re.IGNORECASE)
 
 
+_LABEL_PHRASES: list[list[str]] | None = None
+_HEADINGS: set[tuple[str, ...]] | None = None
+
+
+def _tokens(text: str) -> list[str]:
+    return [t for t in (fold(w).strip(":.;,") for w in text.split()) if t]
+
+
+def _label_phrases() -> tuple[list[list[str]], set[tuple[str, ...]]]:
+    """Bekannte Label-Phrasen der Regel-Extraktion (längste zuerst) und Abschnittsüberschriften."""
+    global _LABEL_PHRASES, _HEADINGS
+    if _LABEL_PHRASES is None or _HEADINGS is None:
+        from ..extraction.rules import LABELS, SECTION_LABELS, STOP_LABELS
+
+        phrases: set[tuple[str, ...]] = set()
+        for lst in LABELS.values():
+            phrases.update(tuple(_tokens(x)) for x in lst)
+        headings: set[tuple[str, ...]] = set()
+        for heading, mapping in SECTION_LABELS.items():
+            headings.add(tuple(_tokens(heading)))
+            for lst in mapping.values():
+                phrases.update(tuple(_tokens(x)) for x in lst)
+        phrases.update(tuple(_tokens(x)) for x in STOP_LABELS)
+        phrases.update(tuple(_tokens(x)) for x in ("Name / Firma", "Name", "Anschrift", "Adresse"))
+        _LABEL_PHRASES = sorted((list(p) for p in phrases if p), key=len, reverse=True)
+        _HEADINGS = headings
+    return _LABEL_PHRASES, _HEADINGS
+
+
+def _split_label(line: str) -> tuple[str, str] | None:
+    """„Versicherungsnummer 8815201-7“ -> („Versicherungsnummer“, „8815201-7“), sonst ``None``."""
+    words = line.split()
+    toks = [fold(w).strip(":.;,") for w in words]
+    phrases, _ = _label_phrases()
+    for ph in phrases:
+        n = len(ph)
+        if len(toks) > n and toks[:n] == ph:
+            return " ".join(words[:n]), " ".join(words[n:])
+    return None
+
+
 def markdown_to_page_text(
     text: str,
     page_number: int,
@@ -46,31 +88,66 @@ def markdown_to_page_text(
     engine: str,
     dpi: float | None = None,
 ) -> PageText:
-    """GLM-OCR-Ausgabe (Text/Markdown) in ein ``PageText`` mit synthetischen Wortpositionen umwandeln."""
+    """GLM-OCR-Ausgabe (Text/Markdown) in ein ``PageText`` mit synthetischen Wortpositionen umwandeln.
+
+    GLM-OCR fasst zweispaltige Label/Wert-Layouts zu einer Zeile zusammen („Beitrag 150,00 EUR“).
+    Beginnt eine Zeile mit einem bekannten Label der Regel-Extraktion, wird der Wert in eine eigene
+    Wertspalte gesetzt (wie im Original). Folgezeilen eines Werts (z. B. „12345 Musterstadt“) landen
+    ebenfalls in der Wertspalte, Tabellenzellen spaltenweise nebeneinander.
+    """
+    phrases, headings = _label_phrases()
+    phrase_set = {tuple(p) for p in phrases}
     rows: list[list[str]] = []
+    prev_split = False
     for raw in text.replace("\r", "").split("\n"):
         line = _HTML_TAG.sub(" ", raw).rstrip()
         if not line.strip() or _TABLE_SEP.match(line):
+            prev_split = False
             continue
         if "|" in line and line.strip().startswith("|"):
             cells = [c.strip() for c in line.strip().strip("|").split("|")]
             cells = [c for c in cells if c]
             if cells:
                 rows.append(cells)
+            prev_split = len(cells) >= 2
             continue
-        rows.append([_MD_PREFIX.sub("", line).replace("**", "").replace("__", "").strip()])
+        clean = _MD_PREFIX.sub("", line).replace("**", "").replace("__", "").strip()
+        toks = tuple(_tokens(clean))
+        if toks in headings or toks in phrase_set:
+            # Abschnittsüberschrift oder Label ohne Wert (z. B. „Versicherte Person“) – nicht aufteilen
+            rows.append([clean])
+            prev_split = False
+            continue
+        split = _split_label(clean)
+        if split is not None:
+            rows.append([split[0], split[1]])
+            prev_split = True
+        elif prev_split and len(clean) <= 60:
+            rows.append(["", clean])  # Folgezeile in der Wertspalte
+        else:
+            rows.append([clean])
+            prev_split = False
     words: list[Word] = []
     lines_out: list[str] = []
     n = max(len(rows), 1)
     margin = page_height * 0.05
     step = min((page_height - 2 * margin) / n, 22.0)
     height = max(min(step * 0.7, 12.0), 4.0)
+    value_x = page_width * 0.45
     for li, cells in enumerate(rows):
         y0 = margin + li * step
-        col_w = (page_width * 0.9) / max(len(cells), 1)
+        if len(cells) == 2:
+            starts = [page_width * 0.05, value_x]
+            widths = [value_x - page_width * 0.07, page_width * 0.5]
+        else:
+            col_w = (page_width * 0.9) / max(len(cells), 1)
+            starts = [page_width * 0.05 + ci * col_w for ci in range(len(cells))]
+            widths = [col_w] * len(cells)
         for ci, cell in enumerate(cells):
-            x = page_width * 0.05 + ci * col_w
-            char_w = min(col_w / max(len(cell), 1), 6.0)
+            if not cell:
+                continue
+            x = starts[ci]
+            char_w = min(widths[ci] / max(len(cell), 1), 5.0)
             for token in cell.split():
                 w = max(len(token) * char_w, 2.0)
                 words.append(
@@ -83,7 +160,7 @@ def markdown_to_page_text(
                     )
                 )
                 x += w + char_w
-        lines_out.append("    ".join(cells))
+        lines_out.append("    ".join(c for c in cells if c))
     return PageText(
         page_number=page_number,
         width=page_width,

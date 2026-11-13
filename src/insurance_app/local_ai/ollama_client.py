@@ -527,6 +527,7 @@ class OllamaClient:
         max_tokens: int = 1024,
         timeout: float = 120.0,
         num_ctx: int | None = None,
+        think: bool | None = False,
     ) -> dict[str, Any]:
         """Eine Chat-Anfrage mit JSON-Schema (``format``), ``temperature=0`` und Token-Limit.
 
@@ -548,6 +549,9 @@ class OllamaClient:
         }
         if num_ctx:
             payload["options"]["num_ctx"] = int(num_ctx)
+        if think is not None:
+            # Denkmodelle (z. B. qwen3-vl:4b) würden sonst das Token-Limit mit dem Denkprozess verbrauchen
+            payload["think"] = bool(think)
         started = time.monotonic()
         data = self._request_json("POST", "/api/chat", payload, timeout=timeout)
         duration = time.monotonic() - started
@@ -581,6 +585,7 @@ class OllamaClient:
         max_tokens: int = 4096,
         timeout: float = 180.0,
         num_ctx: int | None = 16384,
+        think: bool | None = False,
     ) -> str:
         """Freitext-Antwort (z. B. Texterkennung mit GLM-OCR: Prompt „Text Recognition:“).
 
@@ -596,6 +601,8 @@ class OllamaClient:
             "stream": False,
             "options": options,
         }
+        if think is not None:
+            payload["think"] = bool(think)
         started = time.monotonic()
         data = self._request_json("POST", "/api/chat", payload, timeout=timeout)
         if not isinstance(data, dict):

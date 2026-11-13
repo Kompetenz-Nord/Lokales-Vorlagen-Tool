@@ -180,3 +180,22 @@ def test_maximal_profile_crosscheck_creates_conflict(svc: AppService):
             for fv in case.order_fields.values()
         )
         assert "gemma4:e4b" in case.metadata.get("lokale_ki_modelle", "")
+
+
+def test_real_glm_ocr_output_is_fully_extracted():
+    """Echte GLM-OCR-Ausgabe (Ollama, glm-ocr, CPU) des synthetischen Police-Scans, Seite 1.
+
+    GLM-OCR fasst Label und Wert zu einer Zeile zusammen; die Layout-Rekonstruktion muss
+    trotzdem alle Sollwerte liefern (gemessen: 26/26 nach der Korrektur, vorher 1/26).
+    """
+    from insurance_app.core.models import DocumentText, DocumentType
+    from insurance_app.extraction.extractor import SourceDocInfo, extract_candidates
+
+    text = (SYN / "glm_ocr_ausgabe_police_scan_s1.txt").read_text("utf-8")
+    page = markdown_to_page_text(text, 1, 595.28, 841.89, engine="glm-ocr")
+    res = extract_candidates(
+        DocumentText(document_id="D-G", pages=[page]), SourceDocInfo("D-G", "scan.pdf", DocumentType.POLICY)
+    )
+    truth = json.loads((SYN / "MUSTER_Police_Scan.pdf.truth.json").read_text("utf-8"))
+    got = {k: (res.best(k).normalized if res.best(k) else None) for k in truth}
+    assert got == truth
