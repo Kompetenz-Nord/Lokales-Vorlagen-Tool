@@ -2,7 +2,7 @@
 
 **Kurz gesagt:**
 
-- **1.393 automatische Tests bestanden, 0 fehlgeschlagen** (Lauf am 13.11.2026 unter Linux).
+- **1.428 automatische Tests bestanden, 0 fehlgeschlagen, 1 übersprungen** (Lauf am 13.11.2026 unter Linux). Der übersprungene Test prüft nur die Meldung „RapidOCR ist nicht installiert“ – RapidOCR ist hier installiert.
 - Die gebaute App (PyInstaller, Linux) startet und besteht ihre Selbstprüfung.
 - Texterkennung auf dem synthetischen Testsatz: **97,6 % richtig**, 2 Werte falsch ohne Warnung (Einzelheiten: [BENCHMARK.md](BENCHMARK.md)).
 - **Nicht getestet:** Windows und macOS (kein solcher Rechner verfügbar), lokale KI mit Grafikkarte, echte Kundendokumente.
@@ -24,10 +24,10 @@
 | Nr. | Befehl | Ergebnis |
 |---|---|---|
 | 1 | `ruff check src tests scripts` | „All checks passed!“ |
-| 2 | `ruff format --check src tests scripts` | 207 Dateien, alle korrekt formatiert |
-| 3 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests` | **1393 passed** in 162 s |
-| 4 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests -m "not slow"` | 1368 passed, 25 deselected in 130 s |
-| 5 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests -m slow` | 25 passed |
+| 2 | `ruff format --check src tests scripts` | 213 Dateien, alle korrekt formatiert |
+| 3 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests` | **1428 passed, 1 skipped** in 173 s |
+| 4 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests -m "not slow"` | 1402 passed, 1 skipped, 26 deselected in 142 s |
+| 5 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests -m slow` | 26 passed |
 | 6 | `python3 -m PyInstaller --noconfirm --clean packaging/lokales_vorlagen_tool.spec` | Build erfolgreich, Ordner 434 MB (inklusive der Hausschriften DM Sans und Tinos) |
 | 7 | gebaute App: `LokalesVorlagenTool --selftest` | 14 Prüfpunkte OK, „Selbstprüfung abgeschlossen“ |
 | 8 | gebaute App: Start der Oberfläche (ohne Bildschirm, 12 s) | läuft ohne Absturz; Logdatei nur für den Nutzer lesbar (0600) |
@@ -48,14 +48,14 @@ Die „langsamen“ Tests (`slow`) sind Tests mit echter Texterkennung und mit d
 | `test_validation` | 53 | IBAN-Prüfziffer, PLZ, Datum, Betrag, Plausibilität |
 | `test_template_mapping` | 114 | Vorlagenkatalog, Feldzuordnung, Versionen, Import, Entfernen |
 | `test_pdf_output` | 91 | Befüllung der Originalvorlagen, zwei Renderer, Qualitätskontrolle, Export |
-| `test_letters` | 25 | DIN-5008-Briefe: Maße, Textbausteine, Plausibilität |
+| `test_letters` | 51 | DIN-5008-Briefe: Maße, Textbausteine, Plausibilität; einfacher Brief: automatische Befüllung, Prüfung, Erzeugung, Adressbuch |
 | `test_storage` | 40 | Datenbank, Migrationen, gleichzeitige Änderungen |
 | `test_security` | 91 | Log-Schwärzung, Netzwerk-Wächter, Temp-Ordner, Dateirechte |
 | `test_local_ai` | 216 | Ollama-Anbindung (simuliert), Modellrollen, Profile, Abgleich |
 | `test_benchmark` | 33 | Messskript und Regressionsschutz für schwierige Scans |
 | `test_integration` | 32 | Kompletter Ablauf: Freigabe, Übernahme, Brief, Kundenmappe mit 3 Verträgen |
-| `test_ui` | 152 | Oberfläche: Dashboard, Vorgang, Kundenmappen, Katalog, Studio, Einstellungen, Gestaltung nach tecis Styleguide |
-| **Summe** | **1393** | |
+| `test_ui` | 162 | Oberfläche: Dashboard, Brief schreiben, Vorgang, Kundenmappen, Katalog, Studio, Einstellungen, Gestaltung nach tecis Styleguide |
+| **Summe** | **1429** | davon 1 übersprungen |
 
 ## 4. Geprüfte Schutzregeln
 
@@ -88,6 +88,20 @@ Die „langsamen“ Tests (`slow`) sind Tests mit echter Texterkennung und mit d
 ## 5a. Gestaltung nach dem tecis Styleguide
 
 Die Oberfläche folgt dem tecis Corporate Design Manual 1.0 (Farben, DM Sans, Tinos). `tests/test_ui/test_ui_brand.py` (8 Tests) prüft Farbwerte, Aufrasterung, Farbkombinationen, Schriften und dass außerhalb von `theme.py` keine Farbe fest eingetragen ist. Einzelheiten und die eine bewusste Ergänzung (Signalfarben für Prüfstatus): [GESTALTUNG.md](GESTALTUNG.md).
+
+## 5b. Einfacher Brief („Brief schreiben“)
+
+| Geprüft | Ergebnis | Nachweis |
+|---|---|---|
+| Digitales Musterdokument (Kfz-Versicherungsschein) → Brief | Absender, Empfänger, Kennzeichen und Versicherungsnummer automatisch gefüllt; ohne weitere Eingabe vollständig; PDF erzeugt | `test_document_fills_all_letter_fields_automatically` |
+| Dasselbe Dokument als Scan (Texterkennung mit Tesseract) | alle Angaben gefüllt | `test_scanned_document_fills_the_letter_too` |
+| Dasselbe als Scan mit RapidOCR (von Hand geprüft, offline mit Netzwerk-Wächter) | alle Angaben gefüllt, 3,4 s statt 1,5 s; Hinweis „Schreibweise bitte prüfen“ beim Empfänger, weil RapidOCR die sehr kleine Absenderzeile ohne Wortabstände liest | Lauf am 13.11.2026 |
+| Leeres oder widersprüchliches Dokument | Felder bleiben leer, Hinweis nennt den Grund – nichts wird erfunden | `test_nothing_is_invented_…`, `test_conflicting_values_…` |
+| Unvollständiger Brief, Platzhalter im Text | kein PDF, verständliche Liste der offenen Punkte | `test_open_points_block_in_plain_language` |
+| Keine berechneten Fristen in den Brieftexten | bestätigt | `test_no_deadline_is_calculated_in_any_text` |
+| Oberfläche: nichts überlappt oder ist abgeschnitten, ein Klick erzeugt das PDF | bestätigt | `tests/test_ui/test_ui_letter.py` (10 Tests) |
+
+**Grenze:** Getestet wurde mit einem synthetischen Dokument im üblichen Briefaufbau (Absenderzeile über dem Adressfeld). Bei echten Dokumenten mit anderem Aufbau können einzelne Felder leer bleiben; sie lassen sich dann von Hand eintragen.
 
 ## 6. Lokale KI
 

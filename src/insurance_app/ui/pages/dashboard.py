@@ -60,10 +60,12 @@ class DashboardPage(QWidget):
         service: AppService,
         open_case: Callable[[str], None],
         open_bundle: Callable[[str, list[Path]], None] | None = None,
+        open_letter: Callable[[], None] | None = None,
     ) -> None:
         super().__init__()
         self.service = service
         self._open_case = open_case
+        self._open_letter = open_letter
         self._open_bundle = open_bundle
         self.bundle_import: BundleImport | None = None
         self._busy = False
@@ -114,6 +116,15 @@ class DashboardPage(QWidget):
         dv.addWidget(sub)
         btns = QHBoxLayout()
         btns.addStretch(1)
+        self.letter_btn = primary_button(
+            "✉ Brief schreiben (z. B. Kündigung)",
+            "Der einfachste Weg: ein Formular, das wie der Brief aussieht – automatisch vorbefüllt.",
+        )
+        self.letter_btn.setAccessibleName("Brief schreiben")
+        self.letter_btn.setVisible(open_letter is not None)
+        if open_letter is not None:
+            self.letter_btn.clicked.connect(lambda: open_letter())
+        btns.addWidget(self.letter_btn)
         self.choose_btn = primary_button("Dateien auswählen …", "Dateien von diesem Computer auswählen")
         self.choose_btn.setAccessibleName("Dateien auswählen")
         self.choose_btn.clicked.connect(self.choose_files)

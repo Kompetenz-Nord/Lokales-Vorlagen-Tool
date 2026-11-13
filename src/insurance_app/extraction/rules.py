@@ -101,6 +101,13 @@ LABELS: dict[str, list[str]] = {
         "Police Nr.",
     ],
     "contract.application_number": ["Antragsnummer", "Antragsnummer(n)", "Antrags-Nr.", "Antrag Nr."],
+    "vehicle.license_plate": [
+        "Amtliches Kennzeichen",
+        "Amtl. Kennzeichen",
+        "Kfz-Kennzeichen",
+        "Fahrzeugkennzeichen",
+        "Kennzeichen",
+    ],
     "insurer.name": [
         "Unternehmen",
         "Versicherer",

@@ -175,6 +175,9 @@ def render_letter(
 
     # --- Informationsblock vorab berechnen (Höhe bestimmt Betreff-Position) ---
     label_w = 30 * mm
+    if plan.info:  # lange Beschriftungen (z. B. „Versicherungsnummer:“) brauchen etwas mehr Platz
+        widest = max(pdfmetrics.stringWidth(i.label, FONT, 8) for i in plan.info)
+        label_w = min(max(label_w, widest + 2.5 * mm), lay.info_w * 0.55)
     value_w = lay.info_w - label_w - 5 * mm
     info_rows: list[tuple[str, list[str]]] = []
     for item in plan.info:

@@ -58,6 +58,7 @@ Speicherorte je Startart: siehe [README – Wo liegen Daten und Exporte?](../REA
 | Exportordner | Fertige PDFs (ausgefüllte Formulare, Briefe) | **ja** |
 | `tmp/` | Vorschauen und Zwischenstände während der Bearbeitung | **ja**, nur kurzzeitig |
 | `templates/` | Importierte Originalvorlagen und Feldzuordnungen | nein (leere Formulare) |
+| `empfaenger.json` | Gemerkte Briefempfänger: Name und Anschrift, die Sie in einem erzeugten Brief verwendet haben (in der Regel Versicherer) | in der Regel nein; **ja**, wenn Sie an eine Privatperson schreiben |
 | `logs/app.log` | Technisches Protokoll | nein (siehe Grenzen oben) |
 | `logs/export_log.jsonl` | Exportprotokoll | nein |
 | `settings.json` | Einstellungen (z. B. Exportordner, OCR, lokale KI an/aus) | nein; Ordnerpfade können den Benutzernamen des Rechners enthalten |

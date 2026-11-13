@@ -228,6 +228,9 @@ QLineEdit, QComboBox, QSpinBox, QTextEdit, QPlainTextEdit {{
     background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 6px; padding: 5px 8px;
 }}
 QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QTextEdit:focus, QPlainTextEdit:focus {{ border-color: {ACCENT}; }}
+QLineEdit[autoFilled="true"], QPlainTextEdit[autoFilled="true"] {{
+    background: {HIGHLIGHT_BG}; border: 1px solid {HIGHLIGHT};
+}}
 QTableWidget, QTableView, QTreeWidget, QListWidget {{
     background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 8px; gridline-color: {BG_SUBTLE};
     selection-background-color: {SELECT_BG}; selection-color: {TEXT};

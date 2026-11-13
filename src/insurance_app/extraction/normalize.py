@@ -40,6 +40,7 @@ __all__ = [
     "normalize_date",
     "normalize_frequency",
     "normalize_iban",
+    "normalize_license_plate",
     "normalize_integer",
     "normalize_month",
     "normalize_postal_code",
@@ -513,6 +514,26 @@ def fix_paragraph_sign(text: str) -> str:
 def has_glyph_confusion(text: str | None) -> bool:
     """Deutet der Text auf eine I/l-Verwechslung hin (z. B. „IImweg“ statt „Ilmweg“)?"""
     return bool(text and _GLYPH_II.search(text))
+
+
+# Deutsches Kfz-Kennzeichen: Ort (1–3 Buchstaben), Erkennung (1–2 Buchstaben), 1–4 Ziffern,
+# optional E (Elektro) oder H (Oldtimer). Saisonkennzeichen-Zusätze werden nicht gelesen.
+_PLATE = re.compile(
+    r"(?<![A-ZÄÖÜ0-9])([A-ZÄÖÜ]{1,3})\s?[-–\s]\s?([A-Z]{1,2})\s?(\d{1,4})\s?([EH])?(?![A-Z0-9])"
+)
+
+
+def normalize_license_plate(raw: str | None) -> str | None:
+    """Kfz-Kennzeichen lesen -> einheitlich „FL-AB 1234“; ``None``, wenn es keines ist."""
+    if not raw or is_placeholder(raw):
+        return None
+    m = _PLATE.search(normalize_ws(raw).upper())
+    if not m:
+        return None
+    district, letters, digits, suffix = m.groups()
+    if len(district) + len(letters) + len(digits) > 8:
+        return None
+    return f"{district}-{letters} {digits}{suffix or ''}"
 
 
 _PLZ = re.compile(r"(?<![\d])(?:(?:D|DE|A|AT|CH)\s?-\s?)?(\d{4,5})(?!\d)")

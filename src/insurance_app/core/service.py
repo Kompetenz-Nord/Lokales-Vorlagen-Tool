@@ -41,6 +41,16 @@ from ..letters.din5008 import render_letter
 from ..letters.plausibility import check_letter_plausibility
 from ..letters.qa import run_letter_qa
 from ..letters.schema import LetterHint, LetterTemplate
+from ..letters.simple import (
+    DEFAULT_LETTER_TYPE,
+    SIMPLE_LETTER_TYPES,
+    Prefill,
+    SimpleLetter,
+    SimpleLetterType,
+    prefill_letter,
+    to_plan,
+    validate_letter,
+)
 from ..ocr.docling_backend import DoclingBackend
 from ..ocr.rapidocr_backend import RapidOcrBackend
 from ..ocr.service import RecognitionCancelled, RecognitionError, TextRecognitionService
@@ -59,6 +69,7 @@ from ..templates.resolver import ChecklistItem, FillPlan, resolve_fill_values
 from ..templates.schema import TemplateDefinition, TemplateStatus
 from ..validation.plausibility import check_plausibility
 from ..validation.validators import validate_case, validate_field
+from .address_book import AddressBook
 from .case import Bundle, Case, CaseSummary, ExportRecord, PipelineStage, SourceDocument
 from .fields import FIELD_REGISTRY, FieldCategory, FieldType, get_field
 from .models import (
@@ -189,6 +200,13 @@ class PreviewResult(BaseModel):
     blocking: bool = False
     flatten_allowed: bool = False
     flatten_reason: str = ""
+
+
+class SimpleLetterPreview(BaseModel):
+    pdf_path: Path
+    page_images: list[Path]
+    problems: list[str] = Field(default_factory=list)  # offene Punkte (blockieren die PDF-Erzeugung)
+    warnings: list[str] = Field(default_factory=list)  # z. B. zu lange Empfängerzeile
 
 
 class ExportOutcome(BaseModel):
@@ -357,6 +375,7 @@ class AppService:
         self._today = today
         self.db = Database(self.paths.database)
         self.repo = CaseRepository(self.db, self.paths)
+        self.address_book = AddressBook(self.paths.data / "empfaenger.json")
         self.registry = TemplateRegistry(self.paths)
         self.filler = TemplateFiller(self.paths.fonts_dir)
         self._passwords: dict[str, str] = {}  # document_id -> Passwort (nur Arbeitsspeicher)
@@ -1722,14 +1741,14 @@ class AppService:
                 ) from exc
         finally:
             force_rmtree(work)
-        return self._record_export(case, tpl, exported, qa)
+        return self._record_export(case, tpl.kind, exported, qa)
 
     def _finalize_export(self, case: Case, identity: object, tmp_pdf: Path, qa: QaReport, flattened: bool):
         return self.exporter.finalize(
             case.id, identity, tmp_pdf, qa, flattened=flattened, created=self.today()
         )  # type: ignore[arg-type]
 
-    def _record_export(self, case: Case, tpl: ActiveTemplate, exported, qa: QaReport) -> ExportOutcome:  # noqa: ANN001
+    def _record_export(self, case: Case, kind: str, exported, qa: QaReport) -> ExportOutcome:  # noqa: ANN001
         entry = exported.log_entry
         self.repo.log_export(
             case.id,
@@ -1750,7 +1769,7 @@ class AppService:
                 flattened=entry.flattened,
                 qa_passed=True,
                 qa_summary=f"{sum(1 for c in qa.checks if c.passed)}/{len(qa.checks)} Prüfungen bestanden",
-                kind=tpl.kind,
+                kind=kind,
             )
         )
         case.add_history(HistoryEntry(actor="user", action="export", detail=entry.file_name))
@@ -1759,6 +1778,124 @@ class AppService:
         self.discard_preview(case.id)
         log.info("PDF erzeugt: vorgang=%s vorlage=%s", case.id, entry.template_id)
         return ExportOutcome(path=exported.path, qa=qa, log_entry=entry)
+
+    # ------------------------------------------------------------------
+    # Einfacher Brief: ein Formular, das wie der Brief aussieht
+    # ------------------------------------------------------------------
+    def simple_letter_types(self) -> list[SimpleLetterType]:
+        return list(SIMPLE_LETTER_TYPES.values())
+
+    def recipient_book(self) -> list[list[str]]:
+        """Gemerkte Empfänger (Anschriftzeilen) für die Auswahl im Briefformular."""
+        return self.address_book.entries()
+
+    def prefill_simple_letter(self, case: Case | None, letter_type: str = DEFAULT_LETTER_TYPE) -> Prefill:
+        """Brief vorbefüllen: alles, was in den Dokumenten des Vorgangs eindeutig erkannt wurde."""
+        known: list[str] | None = None
+        if case is not None:
+            insurer = case.get("insurer.name")
+            if insurer is not None and insurer.value:
+                known = self.address_book.lookup(insurer.value)
+        return prefill_letter(case, letter_type, self.today(), known_recipient=known)
+
+    def letter_from_documents(
+        self,
+        paths: list[Path],
+        letter_type: str = DEFAULT_LETTER_TYPE,
+        *,
+        passwords: dict[str, str] | None = None,
+        progress: ProgressCallback | None = None,
+        cancel: threading.Event | None = None,
+    ) -> tuple[Case, Prefill, list[str]]:
+        """Dokumente einlesen und daraus einen vorbefüllten Brief machen -> (Vorgang, Brief, Hinweise)."""
+        ltype = SIMPLE_LETTER_TYPES.get(letter_type) or SIMPLE_LETTER_TYPES[DEFAULT_LETTER_TYPE]
+        case = self.create_case(f"Brief – {ltype.title}")
+        notes: list[str] = []
+        for path in paths:
+            res = self.add_document(case, Path(path), password=(passwords or {}).get(str(path)))
+            if res.needs_password:
+                notes.append(
+                    f"{res.file_name}: passwortgeschützt – bitte über „Dashboard“ mit Passwort laden."
+                )
+            elif not res.accepted:
+                notes.append(f"{res.file_name}: {res.message or 'Datei konnte nicht gelesen werden.'}")
+        if case.active_documents():
+            self.process_documents(case, progress=progress, cancel=cancel)
+        return case, self.prefill_simple_letter(case, ltype.key), notes
+
+    def check_simple_letter(self, letter: SimpleLetter) -> list[str]:
+        return validate_letter(letter)
+
+    def preview_simple_letter(self, letter: SimpleLetter, *, dpi: int = 110) -> SimpleLetterPreview:
+        """Vorschau des Briefs (mit Wasserzeichen) als Seitenbilder."""
+        out_dir = self.paths.preview_dir / "einfacher-brief"
+        force_rmtree(out_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        os.chmod(out_dir, 0o700)
+        pdf_path = out_dir / "vorschau.pdf"
+        plan = to_plan(letter, mode="preview")
+        result = render_letter(
+            plan, pdf_path, self.paths.fonts_dir, preview=True, form=self.settings.letter_form
+        )  # type: ignore[arg-type]
+        images = save_previews(pdf_path, out_dir / "seiten", dpi=dpi)
+        return SimpleLetterPreview(
+            pdf_path=pdf_path,
+            page_images=images,
+            problems=validate_letter(letter),
+            warnings=list(result.warnings),
+        )
+
+    def generate_simple_letter(self, case: Case | None, letter: SimpleLetter) -> tuple[Case, ExportOutcome]:
+        """Brief final erzeugen („PDF jetzt erzeugen“). Offene Punkte blockieren."""
+        problems = validate_letter(letter)
+        if problems:
+            raise ExportBlockedError(
+                "Der Brief kann noch nicht erzeugt werden:\n" + "\n".join(f"• {p}" for p in problems)
+            )
+        ltype = SIMPLE_LETTER_TYPES[letter.letter_type]
+        if case is None:
+            case = self.create_case(f"Brief – {ltype.title}")
+        plan = to_plan(letter, mode="final")
+        work = self.paths.temp_dir / f"export-{case.id}"
+        force_rmtree(work)
+        work.mkdir(parents=True)
+        os.chmod(work, 0o700)
+        try:
+            tmp_pdf = work / "ausgabe.pdf"
+            rendered = render_letter(
+                plan, tmp_pdf, self.paths.fonts_dir, preview=False, form=self.settings.letter_form
+            )  # type: ignore[arg-type]
+            if rendered.warnings:
+                raise ExportBlockedError("\n".join(f"• {w}" for w in rendered.warnings))
+            qa = run_letter_qa(plan, tmp_pdf, final=True, form=self.settings.letter_form)
+            if not qa.passed:
+                failed = "\n".join(f"• {c.message}" for c in qa.errors)
+                raise ExportBlockedError(f"Die Qualitätskontrolle ist nicht bestanden:\n{failed}")
+            identity = LetterExportIdentity(
+                template_id=plan.template_id, version=plan.template_version, short_title=ltype.short_title
+            )
+            try:
+                exported = self._finalize_export(case, identity, tmp_pdf, qa, False)
+            except OSError as exc:
+                raise ExportBlockedError(
+                    "Der Exportordner ist nicht erreichbar oder nicht beschreibbar – bitte unter "
+                    "„Einstellungen“ einen anderen Ordner wählen."
+                ) from exc
+        finally:
+            force_rmtree(work)
+        # Brief am Vorgang merken (zum späteren Öffnen) und Empfänger ins lokale Adressbuch
+        case.metadata["einfacher_brief"] = letter.model_dump_json()
+        self.address_book.remember(letter.recipient_lines())
+        return case, self._record_export(case, "letter", exported, qa)
+
+    def stored_simple_letter(self, case: Case) -> SimpleLetter | None:
+        raw = case.metadata.get("einfacher_brief")
+        if not raw:
+            return None
+        try:
+            return SimpleLetter.model_validate_json(raw)
+        except ValueError:
+            return None
 
     # ------------------------------------------------------------------
     # Kundenmappen / Stapelverarbeitung

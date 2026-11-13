@@ -42,6 +42,7 @@ from .theme import LOCAL_ONLY_TEXT
 class MainWindow(QMainWindow):
     NAV = (
         ("dashboard", "🗂  Dashboard / Vorgänge"),
+        ("letter", "✉  Brief schreiben"),
         ("bundles", "👥  Kundenmappen"),
         ("catalog", "📄  Vorlagen & Formulare"),
         ("studio", "🛠  Vorlagen-Studio"),
@@ -54,6 +55,7 @@ class MainWindow(QMainWindow):
         from .pages.case_view import CaseView
         from .pages.catalog import CatalogPage
         from .pages.dashboard import DashboardPage
+        from .pages.letter import LetterPage
         from .pages.settings import SettingsPage
         from .pages.studio import StudioPage
 
@@ -98,7 +100,13 @@ class MainWindow(QMainWindow):
 
         self.case_view = CaseView(service, show_catalog=lambda: self.show_section("catalog"))
         self.pages: dict[str, QWidget] = {
-            "dashboard": DashboardPage(service, open_case=self.open_case, open_bundle=self.open_bundle),
+            "dashboard": DashboardPage(
+                service,
+                open_case=self.open_case,
+                open_bundle=self.open_bundle,
+                open_letter=lambda: self.show_section("letter"),
+            ),
+            "letter": LetterPage(service),
             "bundles": BundlesPage(service, open_case=self.open_case),
             "case": self.case_view,
             "catalog": CatalogPage(
@@ -135,6 +143,15 @@ class MainWindow(QMainWindow):
             refresh()
 
     def open_case(self, case_id: str) -> None:
+        # Vorgänge, die als einfacher Brief entstanden sind, öffnen wieder im Briefformular
+        try:
+            case = self.service.load_case(case_id)
+        except Exception:  # noqa: BLE001 – die Vorgangsansicht zeigt den Fehler verständlich an
+            case = None
+        if case is not None and not case.template_id and self.pages["letter"].open_case(case):
+            self._nav_buttons["letter"].setChecked(True)
+            self.stack.setCurrentWidget(self.pages["letter"])
+            return
         self.case_view.open_case(case_id)
         self._nav_buttons["dashboard"].setChecked(True)
         self.stack.setCurrentWidget(self.case_view)

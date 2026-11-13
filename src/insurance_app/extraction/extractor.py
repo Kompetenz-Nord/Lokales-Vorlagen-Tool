@@ -56,6 +56,7 @@ from .normalize import (
     normalize_amount,
     normalize_country,
     normalize_iban,
+    normalize_license_plate,
     normalize_value,
     split_person_name,
     split_postal_city,
@@ -461,6 +462,10 @@ class _DocExtractor:
                 self._add_simple(f"{prefix}.postal_code", plz, base, ev)
             if city:
                 self._add_simple(f"{prefix}.city", city, base, ev)
+        elif key == "vehicle.license_plate":
+            plate = normalize_license_plate(value)
+            if plate:  # „Kennzeichen“ kommt auch in anderem Sinn vor – nur echte Kfz-Kennzeichen übernehmen
+                self._add(key, value, plate, base, ev)
         elif key == "contract.term":
             self._term(value, m, base, page)
         elif key == "premium.amount":

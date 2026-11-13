@@ -46,6 +46,13 @@ Legende: `[x]` erledigt und getestet · `[~]` in Arbeit · `[ ]` offen · `[!]` 
 ## Welle 5 – Gestaltung
 - [x] Oberfläche nach dem tecis Corporate Design Manual 1.0: Markenfarben, erlaubte Kombinationen und Aufrasterungen, DM Sans und Tinos (siehe `docs/GESTALTUNG.md`)
 
+## Welle 6 – Einfache Bedienung
+- [x] Seite „Brief schreiben“: ein Formular wie der fertige Brief (Absender, Empfänger, Bezug, Betreff, Datum, Text, Name)
+- [x] Automatische Befüllung aus dem Dokument, auch aus dem Adressfeld und der Absenderzeile eines Schreibens
+- [x] Kfz: Kennzeichen wird erkannt; Briefarten Kündigung Kfz, Kündigung, Sonderkündigung, Widerruf, freier Brief
+- [x] Lokales Adressbuch für Empfänger (nur selbst verwendete Anschriften)
+- [x] RapidOCR als zweite Texterkennung installiert und offline geprüft (optional)
+
 ## Abschluss
 - [x] Review-Welle und Fehlerbehebung
 - [x] Testbericht (`docs/TESTBERICHT.md`), Beispielexporte (`docs/beispiel/`), Statusübersicht

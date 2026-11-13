@@ -163,6 +163,8 @@ _FIELDS: list[FieldDef] = [
         sensitive=True,
         help="Nur aus verlässlicher Quelle (z. B. Kündigungs-/Austrittsbestätigung) oder manuell erfassen.",
     ),
+    # --- Fahrzeug (Kfz-Versicherung) ---------------------------------------
+    _f("vehicle.license_plate", "Amtliches Kennzeichen", "Fahrzeug", T.TEXT, sensitive=True),
     # --- Beitrag ------------------------------------------------------------
     _f("premium.amount", "Beitrag", "Beitrag", T.AMOUNT),
     _f("premium.currency", "Währung", "Beitrag", T.CURRENCY),

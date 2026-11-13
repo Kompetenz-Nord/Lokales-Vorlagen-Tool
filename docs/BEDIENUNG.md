@@ -53,6 +53,53 @@ Beim ersten Start erscheint ein kurzer Willkommenshinweis zu LOCAL ONLY.
 
 ---
 
+## 0. Der schnellste Weg: Brief schreiben
+
+**Kurz gesagt:** Dokument ablegen, Angaben kurz prüfen, „PDF jetzt erzeugen“. Das Formular sieht aus wie der fertige Brief und enthält nur, was im Brief steht.
+
+![Brief schreiben](images/ui_letter.png)
+
+**So gehen Sie vor**
+
+1. Links **„✉ Brief schreiben“** wählen (oder auf dem Dashboard **„✉ Brief schreiben (z. B. Kündigung)“**).
+2. **„Briefart“** wählen, zum Beispiel „Kündigung Kfz-Versicherung“.
+3. Versicherungsschein, Schreiben des Versicherers oder ein Foto auf die Ablagefläche ziehen – oder **„Dokument auswählen …“**. Zum Ausprobieren: **„Beispiel laden (synthetisch)“**.
+4. Die App füllt den Brief aus. Über dem Formular steht, was sie übernommen hat. Diese Felder sind farbig hinterlegt, bis Sie sie ändern.
+5. Rechts sehen Sie die **Vorschau**. Darüber steht „✔ Alles vollständig“ oder eine Liste „Noch offen“.
+6. **„PDF jetzt erzeugen“**. Danach: ausdrucken, von Hand unterschreiben, selbst versenden.
+
+**Die Felder**
+
+| Feld | Inhalt | Wird automatisch gefüllt aus |
+|---|---|---|
+| Absender (Sie) | Name, Straße und Hausnummer, PLZ und Ort | Angaben zum Versicherungsnehmer oder dem Adressfeld des Schreibens |
+| Empfänger | Name und Anschrift des Versicherers | Absenderzeile des Schreibens; sonst aus Ihren gemerkten Empfängern |
+| Bezug | z. B. Kennzeichen und Versicherungsnummer; mit **„+ Info hinzufügen“** weitere Angaben | Versicherungsnummer und Kennzeichen im Dokument |
+| Betreff, Datum | „Kündigung“ und das heutige Datum | Vorgabe der Briefart |
+| Brieftext | Anrede, Text, Grußformel – frei änderbar | Vorgabe der Briefart |
+| Name unter dem Brief | Ihr Name in Druckschrift | wie Absender |
+
+**Briefarten**
+
+| Briefart | Bezug | Besonderheit |
+|---|---|---|
+| Kündigung Kfz-Versicherung | Kennzeichen, Versicherungsnummer | Text: „fristgerecht, ersatzweise zum nächstmöglichen Zeitpunkt“ |
+| Kündigung (andere Versicherung) | Versicherungsnummer | gleicher Text |
+| Sonderkündigung | Versicherungsnummer | Den Grund tragen Sie selbst ein. Solange der Platzhalter in eckigen Klammern steht, wird kein PDF erzeugt. |
+| Widerruf | Versicherungsnummer | – |
+| Freier Brief | frei | eigener Text |
+
+**Was die App dabei bewusst nicht tut**
+
+- Sie erfindet nichts. Findet sie eine Angabe nicht oder stehen im Dokument unterschiedliche Werte, bleibt das Feld leer und ein Hinweis nennt den Grund.
+- Sie berechnet keine Fristen und prüft nicht, ob eine Kündigung oder ein Widerruf möglich ist.
+- Sie unterschreibt nicht und versendet nichts.
+- Anschriften von Versicherern denkt sie sich nicht aus. Sie merkt sich nur Empfänger, die Sie selbst in einem erzeugten Brief verwendet haben, und bietet sie unter **„Gemerkten Empfänger wählen …“** wieder an. Diese Liste liegt lokal in der Datei `empfaenger.json` im Datenordner.
+
+**Wann der ausführliche Weg besser ist:** Für die Swiss-Life-Formulare (Freigabe, Übernahme) und wenn Sie jeden erkannten Wert mit Fundstelle im Dokument einzeln prüfen möchten, nutzen Sie weiter „Dashboard / Vorgänge“ (Abschnitt 1 und 2).
+
+---
+
 ## 1. Dashboard / Vorgänge
 
 ![Dashboard](images/ui_dashboard.png)

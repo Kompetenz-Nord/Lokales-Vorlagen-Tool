@@ -11,9 +11,13 @@
 | Version | 0.1.0 (Release 1) |
 | Getestet | nur unter **Linux** (Ubuntu 24.04, Python 3.13, PySide6 6.12, Tesseract 5.3.4) |
 | Windows / macOS | Einrichtungs- und Build-Skripte sind vorhanden, wurden aber **noch nicht** auf diesen Systemen ausgeführt |
-| Tests | 1393 automatische Tests bestanden, 0 fehlgeschlagen (Lauf am 13.11.2026, inklusive der langsamen Tests). Einzelheiten: [docs/TESTBERICHT.md](docs/TESTBERICHT.md) |
+| Tests | 1428 automatische Tests bestanden, 0 fehlgeschlagen (Lauf am 13.11.2026, inklusive der langsamen Tests). Einzelheiten: [docs/TESTBERICHT.md](docs/TESTBERICHT.md) |
 | Lizenz | Unlicense (siehe `LICENSE`); Schriften Liberation Sans, DM Sans und Tinos unter SIL Open Font License |
 | Gestaltung | nach dem tecis Corporate Design Manual 1.0 (Farben, DM Sans, Tinos) – siehe [docs/GESTALTUNG.md](docs/GESTALTUNG.md) |
+
+**Der schnellste Weg – „Brief schreiben“:** Dokument ablegen, die App füllt Absender, Empfänger, Versicherungsnummer und Kennzeichen aus, kurz prüfen, „PDF jetzt erzeugen“. Anleitung: [docs/BEDIENUNG.md, Abschnitt 0](docs/BEDIENUNG.md#0-der-schnellste-weg-brief-schreiben).
+
+![Brief schreiben: Formular wie der fertige Brief, rechts die Vorschau](docs/images/ui_letter.png)
 
 ![Dashboard mit Ablagefläche und Vorgangsliste](docs/images/ui_dashboard.png)
 

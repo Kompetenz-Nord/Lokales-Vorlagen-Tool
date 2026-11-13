@@ -175,7 +175,7 @@ def test_main_window_multi_file_drop_shows_bundle_queue(qtbot, svc, dlg, ask, th
 
     win = MainWindow(svc)
     qtbot.addWidget(win)
-    assert list(win._nav_buttons)[:2] == ["dashboard", "bundles"]
+    assert list(win._nav_buttons)[:3] == ["dashboard", "letter", "bundles"]
     assert win._nav_buttons["bundles"].text() == "👥  Kundenmappen"
     assert win._nav_buttons["catalog"].text() == "📄  Vorlagen && Formulare"  # „&“ wörtlich
     dashboard, bundles_page = win.pages["dashboard"], win.pages["bundles"]
