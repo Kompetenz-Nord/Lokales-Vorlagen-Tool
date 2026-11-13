@@ -233,7 +233,7 @@ class OrderForm(QScrollArea):
             fdef.label + ("  (optional)" if optional and "optional" not in fdef.label.lower() else "")
         )
         head.setWordWrap(True)
-        head.setStyleSheet("font-weight: 600;")
+        head.setStyleSheet("font-weight: 700;")
         lay.addWidget(head)
         requirement = QLabel("")
         requirement.setObjectName("requirement")
@@ -344,7 +344,7 @@ class OrderForm(QScrollArea):
         row.requirement.setToolTip(tip)
         row.requirement.setAccessibleName(f"{fdef.label}: {name}")
         row.requirement.setStyleSheet(
-            f"color: {theme.WARN}; font-weight: 600;" if required else f"color: {theme.TEXT_MUTED};"
+            f"color: {theme.WARN}; font-weight: 700;" if required else f"color: {theme.TEXT_MUTED};"
         )
 
     def sync(self, case: Case, hints: list[LetterHint], blocking: set[str] | None = None) -> None:

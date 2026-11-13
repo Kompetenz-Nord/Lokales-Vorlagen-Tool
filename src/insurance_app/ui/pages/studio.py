@@ -154,7 +154,7 @@ class StudioPage(QWidget):
         outer.addLayout(actions)
         self.import_hint = QLabel("")
         self.import_hint.setWordWrap(True)
-        self.import_hint.setStyleSheet(f"color: {INFO}; font-weight: 600;")
+        self.import_hint.setStyleSheet(f"color: {INFO}; font-weight: 700;")
         self.import_hint.setVisible(False)
         outer.addWidget(self.import_hint)
 
@@ -369,7 +369,7 @@ class StudioPage(QWidget):
             self.detail_badge.setText(template_status_text(status))
             self.detail_badge.setStyleSheet(
                 f"color: {template_status_color(status)}; border: 1px solid {template_status_color(status)}; "
-                "border-radius: 10px; padding: 2px 10px; font-weight: 600;"
+                "border-radius: 10px; padding: 2px 10px; font-weight: 700;"
             )
             self.detail_badge.setAccessibleName(f"Status der Originalvorlage: {status.value}")
             self.detail_badge.setVisible(True)

@@ -101,7 +101,7 @@ class ReviewPanel(QWidget):
 
         top = QHBoxLayout()
         lbl = QLabel("Vorlage:")
-        lbl.setStyleSheet("font-weight: 600;")
+        lbl.setStyleSheet("font-weight: 700;")
         top.addWidget(lbl)
         self.template_combo = QComboBox()
         self.template_combo.setAccessibleName("Vorlage wählen")

@@ -184,7 +184,7 @@ class BundlesPage(QWidget):
         )
         self.delete_btn.setAccessibleName("Mappe und Vorgänge löschen")
         self.delete_btn.setStyleSheet(
-            f"QPushButton:disabled {{ color: #9AA4B1; border-color: {theme.BORDER}; background: #EEF1F5; }}"
+            f"QPushButton:disabled {{ color: {theme.DISABLED_TEXT}; border-color: {theme.BORDER}; background: {theme.BG_SUBTLE}; }}"
         )
         self.delete_btn.clicked.connect(self.delete_selected)
         for btn in (self.rename_btn, self.dissolve_btn, self.delete_btn):

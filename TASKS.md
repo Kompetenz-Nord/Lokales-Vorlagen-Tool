@@ -43,6 +43,9 @@ Legende: `[x]` erledigt und getestet · `[~]` in Arbeit · `[ ]` offen · `[!]` 
 - [x] Bedienung: Originalvorlage aus dem Katalog importieren, importierte Version entfernen, Passwort-Nachfrage nach Neustart, Warnung bei Cloud-Sync-Ordnern, Pflicht/optional sichtbar
 - [x] Benchmark neu gemessen: 97,6 % richtig (vorher 80,9 %), 2 sicher falsche Werte (vorher 16)
 
+## Welle 5 – Gestaltung
+- [x] Oberfläche nach dem tecis Corporate Design Manual 1.0: Markenfarben, erlaubte Kombinationen und Aufrasterungen, DM Sans und Tinos (siehe `docs/GESTALTUNG.md`)
+
 ## Abschluss
 - [x] Review-Welle und Fehlerbehebung
 - [x] Testbericht (`docs/TESTBERICHT.md`), Beispielexporte (`docs/beispiel/`), Statusübersicht

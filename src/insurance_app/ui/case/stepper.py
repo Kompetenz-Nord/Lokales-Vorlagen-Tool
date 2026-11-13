@@ -81,16 +81,18 @@ class StepButton(QAbstractButton):
         d = self.CIRCLE
         circle = QRectF((w - d) / 2, 2, d, d)
         if self.state == STEP_DONE:
-            fill, border, fg = QColor(theme.OK), QColor(theme.OK), QColor("white")
+            # erledigt: tecis Blau mit weißem Haken (freigegebene Kombination Weiß auf Blau)
+            fill, border, fg = QColor(theme.PRIMARY), QColor(theme.PRIMARY), QColor(theme.WEISS)
             symbol = "✔"
         elif self.state == STEP_CURRENT:
-            fill, border, fg = QColor(theme.PRIMARY), QColor(theme.PRIMARY_DARK), QColor("white")
+            # aktuell: tecis Limette mit Ziffer in tecis Blau (freigegebene Kombination Blau auf Limette)
+            fill, border, fg = QColor(theme.HIGHLIGHT), QColor(theme.PRIMARY), QColor(theme.PRIMARY)
             symbol = str(int(self.stage))
         else:
             fill, border, fg = QColor(theme.SURFACE), QColor(theme.BORDER), QColor(theme.TEXT_MUTED)
             symbol = str(int(self.stage))
         if self.state == STEP_CURRENT:  # zusätzlicher Ring: nicht nur Farbe
-            p.setPen(QPen(QColor(theme.PRIMARY), 2))
+            p.setPen(QPen(QColor(theme.ACCENT), 2))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawEllipse(circle.adjusted(-3, -3, 3, 3))
         p.setPen(QPen(border, 1.5))

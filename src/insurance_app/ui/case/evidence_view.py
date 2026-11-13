@@ -143,7 +143,7 @@ class PageCanvas(QWidget):
 
     def paintEvent(self, event) -> None:  # noqa: N802 (Qt-API)
         p = QPainter(self)
-        p.fillRect(self.rect(), QColor("#E9EDF2"))
+        p.fillRect(self.rect(), QColor(theme.BG_SUBTLE))
         geo = self.target_rect()
         if geo is None:
             p.end()
@@ -161,7 +161,7 @@ class PageCanvas(QWidget):
                 r.height() * scale,
             ).adjusted(-3, -3, 3, 3)
             p.setBrush(QColor(255, 196, 0, 90))
-            p.setPen(QPen(QColor("#D9480F"), 2))
+            p.setPen(QPen(QColor(theme.ACCENT), 3))
             p.drawRect(mapped)
         p.end()
 
@@ -207,7 +207,7 @@ class EvidenceView(QWidget):
         layout.addWidget(self.canvas, 1)
         self.caption = QLabel("")
         self.caption.setWordWrap(True)
-        self.caption.setStyleSheet("font-weight: 600;")
+        self.caption.setStyleSheet("font-weight: 700;")
         layout.addWidget(self.caption)
         self.quote = QLabel("")
         self.quote.setWordWrap(True)

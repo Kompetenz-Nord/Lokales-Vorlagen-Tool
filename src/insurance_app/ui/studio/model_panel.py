@@ -51,7 +51,7 @@ from ...local_ai.status import (
     find_ollama_binary,
 )
 from .. import dialogs
-from ..theme import ERROR, OK, SURFACE, TEXT_MUTED, WARN
+from ..theme import BG, BG_SUBTLE, BORDER, ERROR, OK, SURFACE, TEXT_MUTED, WARN
 from ..widgets.common import danger_button, muted, section_title
 from ..workers import Task, run_task, user_message
 from . import consent_dialog
@@ -201,7 +201,7 @@ class LocalAiPanel(QWidget):
 
         self.not_installed_box = QFrame()
         self.not_installed_box.setStyleSheet(
-            "QFrame { background: #FFF8E6; border: 1px solid #E9D49A; border-radius: 8px; }"
+            f"QFrame {{ background: {BG_SUBTLE}; border: 1px solid {BORDER}; border-radius: 8px; }}"
             "QLabel { border: none; background: transparent; }"
         )
         nib = QVBoxLayout(self.not_installed_box)
@@ -236,7 +236,7 @@ class LocalAiPanel(QWidget):
     def _build_hardware(self, layout: QVBoxLayout) -> None:
         box = QFrame(objectName="AiHardwareBox")
         box.setStyleSheet(
-            "#AiHardwareBox { background: #F3F6FA; border: 1px solid #D5DBE3; border-radius: 8px; }"
+            f"#AiHardwareBox {{ background: {BG}; border: 1px solid {BORDER}; border-radius: 8px; }}"
             "#AiHardwareBox QLabel { border: none; background: transparent; }"
         )
         bl = QVBoxLayout(box)
@@ -266,7 +266,7 @@ class LocalAiPanel(QWidget):
         bl.addLayout(grid)
         self.recommendation_label = QLabel("")
         self.recommendation_label.setWordWrap(True)
-        self.recommendation_label.setStyleSheet("font-weight: 600;")
+        self.recommendation_label.setStyleSheet("font-weight: 700;")
         self.recommendation_label.setAccessibleName("Empfehlung für dieses Gerät")
         bl.addWidget(self.recommendation_label)
         bl.addWidget(
@@ -296,7 +296,7 @@ class LocalAiPanel(QWidget):
     def _profile_card(self, key: str, prof: AiProfile) -> QFrame:
         frame = QFrame(objectName="ProfileCard")
         frame.setStyleSheet(
-            f"#ProfileCard {{ background: {SURFACE}; border: 1px solid #D5DBE3; border-radius: 8px; }}"
+            f"#ProfileCard {{ background: {SURFACE}; border: 1px solid {BORDER}; border-radius: 8px; }}"
             "#ProfileCard QLabel { border: none; background: transparent; }"
         )
         frame.setAccessibleName(f"Profil {profile_short_name(prof)}")
@@ -308,7 +308,7 @@ class LocalAiPanel(QWidget):
         title.setStyleSheet("font-weight: 700;")
         lay.addWidget(title)
         rec = QLabel("★ Empfehlung für dieses Gerät")
-        rec.setStyleSheet(f"color: {OK}; font-weight: 600;")
+        rec.setStyleSheet(f"color: {OK}; font-weight: 700;")
         rec.setVisible(False)
         lay.addWidget(rec)
         cur = QLabel("✔ entspricht der aktuellen Auswahl")
@@ -517,7 +517,7 @@ class LocalAiPanel(QWidget):
             self.recommendation = (None, "Hardware konnte nicht bewertet werden")
         key, reason = self.recommendation
         self.recommendation_label.setText(recommendation_text(key, reason))
-        self.recommendation_label.setStyleSheet(f"font-weight: 600; color: {OK if key else WARN};")
+        self.recommendation_label.setStyleSheet(f"font-weight: 700; color: {OK if key else WARN};")
         self._update_profile_badges()
 
     def _update_profile_badges(self) -> None:

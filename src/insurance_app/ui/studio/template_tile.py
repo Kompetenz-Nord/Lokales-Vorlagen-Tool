@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSizePol
 
 from ...core.service import TemplateChoice
 from ...templates.schema import TemplateStatus
-from ..theme import BORDER, TEXT_MUTED
+from ..theme import BG_SUBTLE, BORDER, TEXT_MUTED
 from ..widgets.common import badge, muted, primary_button
 from .common import template_status_color, template_status_text
 
@@ -21,7 +21,7 @@ REASON_ERROR = "Vorlage fehlerhaft – Details im Vorlagen-Studio."
 IMPORT_BUTTON_TEXT = "Originalvorlage importieren …"
 
 _UNAVAILABLE_STYLE = (
-    f"QFrame#Card {{ background: #F3F5F8; border: 1px dashed {BORDER}; border-radius: 10px; }}"
+    f"QFrame#Card {{ background: {BG_SUBTLE}; border: 1px dashed {BORDER}; border-radius: 10px; }}"
 )
 
 

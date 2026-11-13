@@ -44,8 +44,8 @@ class ChecklistPanel(QWidget):
         layout.addWidget(self.title)
         self.ready_label = QLabel(READY_TEXT)
         self.ready_label.setStyleSheet(
-            f"color: {theme.OK}; background: #E6F4EA; border: 1px solid #B7DFC2; border-radius: 8px;"
-            " padding: 6px 10px; font-weight: 600;"
+            f"color: {theme.OK}; background: {theme.HIGHLIGHT_BG}; border: 1px solid {theme.HIGHLIGHT}; border-radius: 8px;"
+            " padding: 6px 10px; font-weight: 700;"
         )
         self.ready_label.setAccessibleName("Alle Pflichtangaben vollständig")
         self.ready_label.hide()
@@ -74,7 +74,7 @@ class ChecklistPanel(QWidget):
             self.summary.setText(
                 f"✖ Noch {blocking} offene Pflichtpunkt(e) – die PDF kann noch nicht erzeugt werden."
             )
-            self.summary.setStyleSheet(f"color: {theme.ERROR}; font-weight: 600;")
+            self.summary.setStyleSheet(f"color: {theme.ERROR}; font-weight: 700;")
         else:
             self.summary.setText("Keine offenen Pflichtpunkte.")
             self.summary.setStyleSheet(f"color: {theme.OK};")

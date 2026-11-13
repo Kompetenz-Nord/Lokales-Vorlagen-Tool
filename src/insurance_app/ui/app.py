@@ -14,14 +14,16 @@ def create_application(argv: list[str] | None = None):
     from PySide6.QtWidgets import QApplication
 
     from .. import APP_NAME
-    from .theme import STYLESHEET
+    from .theme import STYLESHEET, body_families, load_brand_fonts
 
     app = QApplication.instance() or QApplication(argv if argv is not None else sys.argv)
     app.setApplicationName(APP_NAME)
     app.setOrganizationName("LokalesVorlagenTool")
     app.setStyle("Fusion")
     app.setStyleSheet(STYLESHEET)
+    # Hausschriften DM Sans und Tinos (Styleguide); Ersatz: Arial / Times New Roman
     font = QFont()
+    font.setFamilies(body_families(load_brand_fonts()))
     font.setPointSizeF(10.5)
     app.setFont(font)
     app.setAttribute(Qt.ApplicationAttribute.AA_DontShowIconsInMenus, False)

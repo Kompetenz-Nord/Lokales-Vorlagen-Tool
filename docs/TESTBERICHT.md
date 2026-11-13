@@ -2,7 +2,7 @@
 
 **Kurz gesagt:**
 
-- **1.385 automatische Tests bestanden, 0 fehlgeschlagen** (Lauf am 13.11.2026 unter Linux).
+- **1.393 automatische Tests bestanden, 0 fehlgeschlagen** (Lauf am 13.11.2026 unter Linux).
 - Die gebaute App (PyInstaller, Linux) startet und besteht ihre Selbstprüfung.
 - Texterkennung auf dem synthetischen Testsatz: **97,6 % richtig**, 2 Werte falsch ohne Warnung (Einzelheiten: [BENCHMARK.md](BENCHMARK.md)).
 - **Nicht getestet:** Windows und macOS (kein solcher Rechner verfügbar), lokale KI mit Grafikkarte, echte Kundendokumente.
@@ -24,11 +24,11 @@
 | Nr. | Befehl | Ergebnis |
 |---|---|---|
 | 1 | `ruff check src tests scripts` | „All checks passed!“ |
-| 2 | `ruff format --check src tests scripts` | 206 Dateien, alle korrekt formatiert |
-| 3 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests` | **1385 passed** in 195 s |
-| 4 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests -m "not slow"` | 1360 passed, 25 deselected in 163 s |
+| 2 | `ruff format --check src tests scripts` | 207 Dateien, alle korrekt formatiert |
+| 3 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests` | **1393 passed** in 162 s |
+| 4 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests -m "not slow"` | 1368 passed, 25 deselected in 130 s |
 | 5 | `QT_QPA_PLATFORM=offscreen python3 -m pytest -q tests -m slow` | 25 passed |
-| 6 | `python3 -m PyInstaller --noconfirm --clean packaging/lokales_vorlagen_tool.spec` | Build erfolgreich, Ordner 431 MB |
+| 6 | `python3 -m PyInstaller --noconfirm --clean packaging/lokales_vorlagen_tool.spec` | Build erfolgreich, Ordner 434 MB (inklusive der Hausschriften DM Sans und Tinos) |
 | 7 | gebaute App: `LokalesVorlagenTool --selftest` | 14 Prüfpunkte OK, „Selbstprüfung abgeschlossen“ |
 | 8 | gebaute App: Start der Oberfläche (ohne Bildschirm, 12 s) | läuft ohne Absturz; Logdatei nur für den Nutzer lesbar (0600) |
 | 9 | `python3 scripts/make_examples.py` | 3 Beispiel-PDFs in `docs/beispiel/` erzeugt |
@@ -54,8 +54,8 @@ Die „langsamen“ Tests (`slow`) sind Tests mit echter Texterkennung und mit d
 | `test_local_ai` | 216 | Ollama-Anbindung (simuliert), Modellrollen, Profile, Abgleich |
 | `test_benchmark` | 33 | Messskript und Regressionsschutz für schwierige Scans |
 | `test_integration` | 32 | Kompletter Ablauf: Freigabe, Übernahme, Brief, Kundenmappe mit 3 Verträgen |
-| `test_ui` | 144 | Oberfläche: Dashboard, Vorgang, Kundenmappen, Katalog, Studio, Einstellungen |
-| **Summe** | **1385** | |
+| `test_ui` | 152 | Oberfläche: Dashboard, Vorgang, Kundenmappen, Katalog, Studio, Einstellungen, Gestaltung nach tecis Styleguide |
+| **Summe** | **1393** | |
 
 ## 4. Geprüfte Schutzregeln
 
@@ -84,6 +84,10 @@ Die „langsamen“ Tests (`slow`) sind Tests mit echter Texterkennung und mit d
 | „§“ als „8“ gelesen, als „Erkannt“ angezeigt | falscher Produktname ohne Warnung | Wiederherstellung in Gesetzesverweisen | `test_ext_ocr_confusions.py` |
 | Rotierte Logdateien mit Standardrechten | für andere Nutzer des Rechners lesbar | Rechte 0600 auch nach dem Rotieren | `test_sec_logging.py` |
 | Zwei veraltete Tests | erwarteten altes Verhalten | an dokumentiertes Verhalten angepasst | SL18477 Zwischenzeitraum, 180°-Fundstelle |
+
+## 5a. Gestaltung nach dem tecis Styleguide
+
+Die Oberfläche folgt dem tecis Corporate Design Manual 1.0 (Farben, DM Sans, Tinos). `tests/test_ui/test_ui_brand.py` (8 Tests) prüft Farbwerte, Aufrasterung, Farbkombinationen, Schriften und dass außerhalb von `theme.py` keine Farbe fest eingetragen ist. Einzelheiten und die eine bewusste Ergänzung (Signalfarben für Prüfstatus): [GESTALTUNG.md](GESTALTUNG.md).
 
 ## 6. Lokale KI
 

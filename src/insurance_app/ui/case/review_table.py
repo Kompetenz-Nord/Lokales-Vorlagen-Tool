@@ -253,7 +253,7 @@ class ReviewTable(QWidget):
             font = QFont(head.font(0))
             font.setBold(True)
             head.setFont(0, font)
-            head.setBackground(0, QColor("#EEF2F7"))
+            head.setBackground(0, QColor(theme.BG_SUBTLE))
             if section == SECTION_OTHER:
                 head.setToolTip(
                     0, "Diese Angaben braucht die gewählte Vorlage nicht. Sie müssen nicht bestätigt werden."

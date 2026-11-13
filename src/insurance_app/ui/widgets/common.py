@@ -46,7 +46,7 @@ def badge(text: str, color: str, tooltip: str = "") -> QLabel:
     """Status-Etikett: Farbe UND Text (nie nur Farbe)."""
     lbl = QLabel(text)
     lbl.setStyleSheet(
-        f"color: {color}; border: 1px solid {color}; border-radius: 10px; padding: 2px 10px; font-weight: 600;"
+        f"color: {color}; border: 1px solid {color}; border-radius: 10px; padding: 2px 10px; font-weight: 700;"
     )
     if tooltip:
         lbl.setToolTip(tooltip)

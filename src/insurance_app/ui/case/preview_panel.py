@@ -140,7 +140,7 @@ class PreviewPanel(QWidget):
             b.setCheckable(True)
             b.setAccessibleName(f"Zoom {z} Prozent")
             b.setStyleSheet(
-                f"QPushButton:checked {{ background: #DCE8F7; border: 2px solid {theme.PRIMARY}; font-weight: 700; }}"
+                f"QPushButton:checked {{ background: {theme.SELECT_BG}; border: 2px solid {theme.PRIMARY}; font-weight: 700; }}"
             )
             b.setChecked(z == self._zoom)
             b.clicked.connect(lambda _=False, zz=z: self.set_zoom(zz))
@@ -182,7 +182,7 @@ class PreviewPanel(QWidget):
         rv.addLayout(btns)
         self.blocker_label = QLabel("")
         self.blocker_label.setWordWrap(True)
-        self.blocker_label.setStyleSheet(f"color: {theme.WARN}; font-weight: 600;")
+        self.blocker_label.setStyleSheet(f"color: {theme.WARN}; font-weight: 700;")
         rv.addWidget(self.blocker_label)
         self.flatten_cb = QCheckBox("Formularfelder fixieren (flach)")
         self.flatten_cb.setAccessibleName("Formularfelder fixieren")
@@ -192,7 +192,9 @@ class PreviewPanel(QWidget):
         rv.addWidget(muted(CONFIRM_TEXT.replace(" PDF jetzt erzeugen?", "")))
 
         self.success = QFrame(objectName="Card")
-        self.success.setStyleSheet("QFrame#Card { background: #E6F4EA; border: 1px solid #B7DFC2; }")
+        self.success.setStyleSheet(
+            f"QFrame#Card {{ background: {theme.HIGHLIGHT_BG}; border: 1px solid {theme.HIGHLIGHT}; }}"
+        )
         sv = QVBoxLayout(self.success)
         self.success_title = QLabel("")
         self.success_title.setStyleSheet(f"color: {theme.OK}; font-weight: 700; font-size: 11.5pt;")
@@ -226,7 +228,7 @@ class PreviewPanel(QWidget):
 
         rv.addWidget(section_title("Technische Qualitätskontrolle"))
         self.qa_summary = QLabel("")
-        self.qa_summary.setStyleSheet("font-weight: 600;")
+        self.qa_summary.setStyleSheet("font-weight: 700;")
         rv.addWidget(self.qa_summary)
         self.qa_list = QListWidget()
         self.qa_list.setWordWrap(True)

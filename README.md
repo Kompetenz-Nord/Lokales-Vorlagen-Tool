@@ -11,8 +11,9 @@
 | Version | 0.1.0 (Release 1) |
 | Getestet | nur unter **Linux** (Ubuntu 24.04, Python 3.13, PySide6 6.12, Tesseract 5.3.4) |
 | Windows / macOS | Einrichtungs- und Build-Skripte sind vorhanden, wurden aber **noch nicht** auf diesen Systemen ausgeführt |
-| Tests | 1385 automatische Tests bestanden, 0 fehlgeschlagen (Lauf am 13.11.2026, inklusive der langsamen Tests). Einzelheiten: [docs/TESTBERICHT.md](docs/TESTBERICHT.md) |
-| Lizenz | Unlicense (siehe `LICENSE`); Schrift Liberation Sans unter SIL Open Font License |
+| Tests | 1393 automatische Tests bestanden, 0 fehlgeschlagen (Lauf am 13.11.2026, inklusive der langsamen Tests). Einzelheiten: [docs/TESTBERICHT.md](docs/TESTBERICHT.md) |
+| Lizenz | Unlicense (siehe `LICENSE`); Schriften Liberation Sans, DM Sans und Tinos unter SIL Open Font License |
+| Gestaltung | nach dem tecis Corporate Design Manual 1.0 (Farben, DM Sans, Tinos) – siehe [docs/GESTALTUNG.md](docs/GESTALTUNG.md) |
 
 ![Dashboard mit Ablagefläche und Vorgangsliste](docs/images/ui_dashboard.png)
 
@@ -432,4 +433,5 @@ Für Entwickler: [ARCHITECTURE.md](ARCHITECTURE.md) (Aufbau), [IMPLEMENTATION_PL
 | [docs/LOKALE_KI.md](docs/LOKALE_KI.md) | Optionale lokale KI: Modelle, Hardware, Einrichtung, Nur-lokal-Modus, Grenzen, ehrlicher Teststand |
 | [docs/FEHLENDE_VORLAGEN.md](docs/FEHLENDE_VORLAGEN.md) | Fehlendes Original, optionale Originale, Import im Vorlagen-Studio |
 | [docs/TESTBERICHT.md](docs/TESTBERICHT.md) | Testbericht |
+| [docs/GESTALTUNG.md](docs/GESTALTUNG.md) | Gestaltung nach dem tecis Styleguide |
 | [docs/BENCHMARK.md](docs/BENCHMARK.md) | Messungen zur Texterkennung |
