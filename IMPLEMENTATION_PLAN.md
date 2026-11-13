@@ -13,6 +13,10 @@
 | Originalvorlagen | SL13065 (1 S., 22 Felder) und SL18477 (6 S., 50 Felder) vom Anwender bereitgestellt. AES-128-verschlüsselt, ohne Öffnungspasswort. Rechte: Ausfüllen ja, Ändern/Seiten umbauen nein. |
 | Beispiel-Eingänge | (a) Screenshot einer Portal-Vertragsübersicht (Label/Wert, 2 Spalten), (b) gescannte Standmitteilung mit fremder OCR-Textebene (GdPicture). **Echte Daten – nicht im Repository.** |
 
+## Fachliche Klarstellungen des Anwenders (13.11.2026)
+- Befüllungsbasis kann **ein Portal-Screenshot** (Vertragsdetails) **oder ein Versicherer-Schreiben** (z. B. Standmitteilung/Jährliche Information, auch gescannt) sein.
+- Der **Abschlussvermittler ist für die Befüllung irrelevant** → Datenprüfung fokussiert auf die Felder, die die gewählte Vorlage benötigt; die Vorlage kann direkt nach dem Upload gewählt werden. Nicht benötigte erkannte Angaben werden eingeklappt und ohne Bestätigungspflicht angezeigt.
+
 ## Technische Entscheidungen (mit Begründung)
 
 1. **PDF-Befüllung mit PyMuPDF, inkrementelles Speichern, Verschlüsselung beibehalten.** Im Test mit dem echten SL18477 korrekt in MuPDF und PDFium: Umlaute, ß, Datumsteilfelder, Kreuze, Betrag `1.234,56`. Die Ausgabe beginnt byte-identisch mit dem Original. pypdf dient nur zum Gegenlesen.
