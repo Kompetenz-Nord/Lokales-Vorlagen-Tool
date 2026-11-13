@@ -28,6 +28,8 @@ __all__ = [
     "WidgetInfo",
     "field_dict_xref",
     "format_af_number",
+    "inherited_key",
+    "parse_da",
     "inspect_document",
     "inspect_pdf_form",
     "open_pdf",
@@ -172,13 +174,12 @@ def open_pdf(path: Path, password: str | None = None) -> pymupdf.Document:
     if not doc.is_pdf:
         doc.close()
         raise PdfOpenError("Die Datei ist keine PDF.")
-    if doc.needs_pass:
-        if not password or not doc.authenticate(password):
-            doc.close()
-            raise PdfOpenError(
-                "Die PDF ist mit einem Passwort geschützt. Bitte das Passwort eingeben.",
-                needs_password=True,
-            )
+    if doc.needs_pass and (not password or not doc.authenticate(password)):
+        doc.close()
+        raise PdfOpenError(
+            "Die PDF ist mit einem Passwort geschützt. Bitte das Passwort eingeben.",
+            needs_password=True,
+        )
     return doc
 
 
@@ -244,7 +245,8 @@ def field_dict_xref(doc: pymupdf.Document, widget_xref: int) -> int:
     return xref
 
 
-def _inherited(doc: pymupdf.Document, xref: int, key: str) -> tuple[str, str]:
+def inherited_key(doc: pymupdf.Document, xref: int, key: str) -> tuple[str, str]:
+    """Schlüssel am Objekt oder (vererbt) an einem Elternfeld lesen -> (Typ, Wert)."""
     current: int | None = xref
     for _ in range(32):
         if current is None:
@@ -341,6 +343,22 @@ def _ap_dict_keys(raw: str) -> list[str]:
     for m in re.finditer(r"/([^\s/<>\[\]()]+)\s*(\d+\s+\d+\s+R|<<.*?>>|/[^\s/<>]+)?", text):
         keys.append(_decode_name("/" + m.group(1)))
     return keys
+
+
+_DA_RE = re.compile(r"/([^\s/]+)\s+(-?[\d.]+)\s+Tf")
+
+
+def parse_da(da: str | None) -> tuple[str | None, float | None]:
+    """Schrift und Größe aus einem DA-String (``/Arial 9 Tf 0 g``) lesen."""
+    if not da:
+        return None, None
+    m = _DA_RE.search(da)
+    if not m:
+        return None, None
+    try:
+        return _decode_name("/" + m.group(1)), float(m.group(2))
+    except ValueError:
+        return _decode_name("/" + m.group(1)), None
 
 
 _AF_NUMBER = re.compile(
@@ -470,22 +488,30 @@ def inspect_document(doc: pymupdf.Document) -> FormInspection:
             info = fields.get(name)
             if info is None:
                 flags = int(widget.field_flags or 0)
-                q_kind, q_val = _inherited(doc, widget.xref, "Q")
+                q_kind, q_val = inherited_key(doc, widget.xref, "Q")
                 q = int(q_val) if q_kind == "int" else default_q
                 value = _read_value(doc, fx)
                 if ftype == "text" and value is None:
                     value = widget.field_value or None
                 max_len = int(widget.text_maxlen) if widget.text_maxlen else None
-                font_size = float(widget.text_fontsize) if widget.text_fontsize is not None else None
+                da_kind, da_val = inherited_key(doc, widget.xref, "DA")
+                da_font, da_size = parse_da(da_val) if da_kind == "string" else (None, None)
+                font_size = (
+                    da_size
+                    if da_size is not None
+                    else (float(widget.text_fontsize) if widget.text_fontsize is not None else None)
+                )
                 choice_values: list[str] = []
                 if ftype in ("combobox", "listbox"):
                     choice_values = _choice_options(widget)
+                if ftype == "signature" and value is None and fx != widget.xref:
+                    value = _read_value(doc, widget.xref)  # nicht normgerecht am Widget abgelegt
                 signed = ftype == "signature" and value is not None
                 info = PdfFieldInfo(
                     name=name,
                     field_type=ftype,
                     max_len=max_len if ftype == "text" else None,
-                    font=widget.text_font or None,
+                    font=da_font or widget.text_font or None,
                     font_size=font_size,
                     align=_ALIGN.get(q, "left"),
                     flags=flags,

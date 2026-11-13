@@ -102,7 +102,9 @@ _CUES: tuple[_Cue, ...] = (
     ),
     # Standmitteilung
     _cue(_S, "Standmitteilung", r"\b(?:wert)?stands?mitteilung\b", 3.0),
-    _cue(_S, "Jährliche Information", r"\bjaehrliche\s+(?:kunden)?(?:information|mitteilung)\b", 3.0),
+    # OCR-tolerant: "lnformation"/"1nformation" (Verwechslung I/l/1)
+    _cue(_S, "Jährliche Information", r"\bjaehrliche\s+(?:kunden)?(?:[il1|]nformation|mitteilung)\b", 3.0),
+    _cue(_S, "Information zur Entwicklung", r"\b[il1|]nformation\s+zur\s+entwicklung\b", 2.5),
     _cue(_S, "Überschussmitteilung", r"\bueberschussmitteilung\b", 3.0),
     _cue(_S, "Wertmitteilung", r"\bwertmitteilung\b", 3.0),
     _cue(_S, "Vertragsguthaben", r"\bvertragsguthaben(?:s)?\b", 1.5),

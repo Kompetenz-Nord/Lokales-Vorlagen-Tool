@@ -23,6 +23,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 import time
 from pathlib import Path
 
@@ -33,6 +34,7 @@ from insurance_app.pdf.fonts import font_file
 from insurance_app.pdf.inspector import (
     PdfPermissions,
     field_dict_xref,
+    inherited_key,
     inspect_document,
     pdf_name,
     read_permissions,
@@ -124,6 +126,23 @@ def _remove_quietly(path: Path) -> None:
         path.unlink(missing_ok=True)
     except OSError:  # pragma: no cover - z. B. Datei gesperrt (Windows)
         log.warning("Temporäre Datei konnte nicht gelöscht werden")
+
+
+_DA_FONT = re.compile(r"(/[^\s/]+)\s+[\d.]+\s+Tf")
+
+
+def _force_font_size(doc: pymupdf.Document, widget: pymupdf.Widget, size: float) -> None:
+    """Schriftgröße direkt in der DA des Widgets setzen.
+
+    PyMuPDF übernimmt eine geänderte Größe bei Kind-Widgets hierarchischer Felder
+    sonst nicht in die Darstellung.
+    """
+    kind, da = inherited_key(doc, widget.xref, "DA")
+    if kind == "string" and _DA_FONT.search(da):
+        new_da = _DA_FONT.sub(lambda m: f"{m.group(1)} {size:g} Tf", da, count=1)
+    else:
+        new_da = f"/Helv {size:g} Tf 0 g"
+    doc.xref_set_key(widget.xref, "DA", pymupdf.get_pdf_str(new_da))
 
 
 class TemplateFiller:
@@ -255,7 +274,8 @@ class TemplateFiller:
             if not mappings:
                 raise MappingError(f"Das Feld „{value.pdf_field}“ ist in der Feldzuordnung nicht vorgesehen.")
             if value.kind in (MappingKind.SIGNATURE, MappingKind.SIGNATURE_DATE) or any(
-                m.kind in (MappingKind.SIGNATURE, MappingKind.SIGNATURE_DATE) or m.fill_policy == FillPolicy.NEVER
+                m.kind in (MappingKind.SIGNATURE, MappingKind.SIGNATURE_DATE)
+                or m.fill_policy == FillPolicy.NEVER
                 for m in mappings
             ):
                 raise MappingError("Unterschriftsfelder und Unterschriftsdaten werden nie befüllt.")
@@ -317,7 +337,9 @@ class TemplateFiller:
             for name, hit in state_hits.items():
                 state = field_values[name].state
                 if state != "Off" and not hit:
-                    raise MappingError(f"Die Vorlage enthält für das Feld „{name}“ keinen Ein-Zustand „{state}“.")
+                    raise MappingError(
+                        f"Die Vorlage enthält für das Feld „{name}“ keinen Ein-Zustand „{state}“."
+                    )
 
             used_overlay = False
             if overlay_values:
@@ -343,7 +365,9 @@ class TemplateFiller:
                     except OverlayNotPermittedError as exc:
                         raise FormPermissionError(exc.user_message) from exc
                     if not ok:
-                        raise MappingError(f"Der Text für „{value.pdf_field}“ passt nicht in den vorgesehenen Bereich.")
+                        raise MappingError(
+                            f"Der Text für „{value.pdf_field}“ passt nicht in den vorgesehenen Bereich."
+                        )
                     used_overlay = True
                     filled.append(value.pdf_field)
 
@@ -365,7 +389,9 @@ class TemplateFiller:
                 doc.close()
 
     @staticmethod
-    def _set_text(doc: pymupdf.Document, widget: pymupdf.Widget, value: FillValue, warnings: list[str]) -> None:
+    def _set_text(
+        doc: pymupdf.Document, widget: pymupdf.Widget, value: FillValue, warnings: list[str]
+    ) -> None:
         name = widget.field_name
         if widget.field_type not in (pymupdf.PDF_WIDGET_TYPE_TEXT, pymupdf.PDF_WIDGET_TYPE_COMBOBOX):
             raise MappingError(f"Das Feld „{name}“ ist kein Textfeld.")
@@ -374,11 +400,11 @@ class TemplateFiller:
             raise MappingError(f"Der Text für „{name}“ ist länger als im Feld erlaubt.")
         if int(widget.field_flags or 0) & 1:
             warnings.append(f"Das Feld „{name}“ ist als schreibgeschützt markiert und wurde dennoch befüllt.")
+        size = float(value.font_size) if value.font_size else (None if widget.text_fontsize else 10.0)
+        if size:
+            _force_font_size(doc, widget, size)
+            widget.text_fontsize = size
         widget.field_value = text
-        if value.font_size:
-            widget.text_fontsize = float(value.font_size)
-        elif not widget.text_fontsize:
-            widget.text_fontsize = 10.0
         widget.update()
         stored = value.stored_value or ""
         fx = field_dict_xref(doc, widget.xref)

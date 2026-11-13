@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import time
 from pathlib import Path
 
@@ -28,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from insurance_app.core.models import Severity
 from insurance_app.core.textutil import normalize_ws
 from insurance_app.pdf.fonts import fit_font_size_multiline, text_width, unsupported_chars
-from insurance_app.pdf.inspector import FormInspection, inspect_document
+from insurance_app.pdf.inspector import FormInspection, PdfFieldInfo, inspect_document
 from insurance_app.pdf.render import RenderError, render_all
 from insurance_app.templates.resolver import FIELD_PADDING, STATE_KINDS, FillPlan, FillValue
 from insurance_app.templates.schema import FillPolicy, MappingKind, TemplateDefinition
@@ -75,7 +76,9 @@ class QaReport(BaseModel):
     @property
     def technical_passed(self) -> bool:
         """Alle technischen Prüfungen bestanden (ohne Vollständigkeit des Plans)."""
-        return all(c.passed for c in self.checks if c.severity == Severity.ERROR and c.code != "PLAN_COMPLETE")
+        return all(
+            c.passed for c in self.checks if c.severity == Severity.ERROR and c.code != "PLAN_COMPLETE"
+        )
 
     def check(self, code: str) -> list[QaCheck]:
         return [c for c in self.checks if c.code == code]
@@ -113,6 +116,7 @@ class _Qa:
         self.flattened = flattened
         self.checks: list[QaCheck] = []
         self.rendered: dict[str, list[str]] = {}
+        self._ap_sizes: dict[int, float] = {}
 
     def add(
         self,
@@ -124,7 +128,9 @@ class _Qa:
         renderer: str | None = None,
     ) -> None:
         self.checks.append(
-            QaCheck(code=code, passed=passed, severity=severity, message=message, page=page, renderer=renderer)
+            QaCheck(
+                code=code, passed=passed, severity=severity, message=message, page=page, renderer=renderer
+            )
         )
 
     # ------------------------------------------------------------------
@@ -172,6 +178,7 @@ class _Qa:
             self.add("FILE_OPENS", True, "Die PDF lässt sich mit MuPDF und pypdf öffnen.")
             ins_o = inspect_document(odoc)
             ins_f = inspect_document(fdoc)
+            self._ap_sizes = _appearance_font_sizes(fdoc, ins_f)
             self.check_pages(odoc, fdoc)
             self.check_prefix(original_bytes, filled_bytes)
             self.check_encryption(ins_o, ins_f)
@@ -241,8 +248,10 @@ class _Qa:
         bad: list[int] = []
         for index in range(min(odoc.page_count, fdoc.page_count)):
             a, b = odoc[index].rect, fdoc[index].rect
-            if abs(a.width - b.width) > 0.01 or abs(a.height - b.height) > 0.01 or (
-                odoc[index].rotation != fdoc[index].rotation
+            if (
+                abs(a.width - b.width) > 0.01
+                or abs(a.height - b.height) > 0.01
+                or (odoc[index].rotation != fdoc[index].rotation)
             ):
                 bad.append(index + 1)
         self.add(
@@ -324,7 +333,9 @@ class _Qa:
                     )
                 else:
                     ok = info.value == state and all(
-                        (w.current_state == state) if w.on_state == state else (w.current_state in (None, "Off"))
+                        (w.current_state == state)
+                        if w.on_state == state
+                        else (w.current_state in (None, "Off"))
                         for w in info.widgets
                     )
                 pv = pypdf_values.get(name)
@@ -345,9 +356,8 @@ class _Qa:
             before_value = before.value if before else None
             before_states = [w.current_state for w in before.widgets] if before else []
             after_states = [w.current_state for w in info.widgets]
-            if info.value != before_value or (before is not None and before_states != after_states):
-                stray.append(info.name)
-            elif before is None and info.has_value:
+            changed = info.value != before_value or (before is not None and before_states != after_states)
+            if changed or (before is None and info.has_value):
                 stray.append(info.name)
         missing_fields = [f.name for f in ins_o.fields if ins_f.field(f.name) is None]
         ok = not problems and not stray and not missing_fields
@@ -390,7 +400,8 @@ class _Qa:
         never = {
             m.pdf_field
             for m in self.t.fields
-            if m.kind in (MappingKind.SIGNATURE, MappingKind.SIGNATURE_DATE) or m.fill_policy == FillPolicy.NEVER
+            if m.kind in (MappingKind.SIGNATURE, MappingKind.SIGNATURE_DATE)
+            or m.fill_policy == FillPolicy.NEVER
         }
         planned = [v.pdf_field for v in self.plan.values if v.pdf_field in never]
         filled = [
@@ -417,7 +428,10 @@ class _Qa:
             if info is None or not info.widgets:
                 continue
             out_info = ins_f.field(name)
-            size = (out_info.font_size if out_info and out_info.font_size else None) or value.font_size
+            size = self.ap_font_size(out_info) if out_info else None
+            size = (
+                size or (out_info.font_size if out_info and out_info.font_size else None) or value.font_size
+            )
             size = size or info.font_size or 10.0
             if info.max_len and len(value.text) > info.max_len:
                 bad.append(name)
@@ -428,7 +442,9 @@ class _Qa:
             height = min(w.height for w in info.widgets)
             if info.multiline or value.kind == MappingKind.MULTILINE:
                 fits = (
-                    fit_font_size_multiline(value.text, width, height, size, min_size=size, padding=FIELD_PADDING)
+                    fit_font_size_multiline(
+                        value.text, width, height, size, min_size=size, padding=FIELD_PADDING
+                    )
                     is not None
                 )
             else:
@@ -440,6 +456,11 @@ class _Qa:
             not bad,
             "Alle Texte passen in ihre Felder." if not bad else f"Text zu lang für: {_names(bad)}.",
         )
+
+    def ap_font_size(self, info: PdfFieldInfo) -> float | None:
+        """Tatsächlich dargestellte Schriftgröße (größter Wert über alle Widgets)."""
+        sizes = [size for w in info.widgets if (size := self._ap_sizes.get(w.xref))]
+        return max(sizes) if sizes else None
 
     def check_glyphs(self, ins_f: FormInspection, fdoc: pymupdf.Document) -> None:
         bad = [v.pdf_field for v in self.plan.values if v.text and unsupported_chars(v.text)]
@@ -527,7 +548,9 @@ class _Qa:
                 msg = getattr(exc, "user_message", None) or "Rendering nicht möglich."
                 self.add("RENDER_OK", False, f"{renderer}: {msg}", renderer=renderer)
                 continue
-            sizes_ok = len(original) == len(filled) and all(a.size == b.size for a, b in zip(original, filled))
+            sizes_ok = len(original) == len(filled) and all(
+                a.size == b.size for a, b in zip(original, filled, strict=False)
+            )
             self.add(
                 "RENDER_OK",
                 sizes_ok and len(filled) == self.t.page_count,
@@ -560,7 +583,11 @@ class _Qa:
         pages = self.t.pages_to_preserve
         if not pages:
             return
-        bad = [p for p in pages if not (1 <= p <= len(arrays_f)) or not np.array_equal(arrays_o[p - 1], arrays_f[p - 1])]
+        bad = [
+            p
+            for p in pages
+            if not (1 <= p <= len(arrays_f)) or not np.array_equal(arrays_o[p - 1], arrays_f[p - 1])
+        ]
         self.add(
             "PRESERVED_PAGES",
             not bad,
@@ -584,11 +611,19 @@ class _Qa:
         planned = self.field_values()
         for info in ins_o.fields:
             value = planned.get(info.name)
+            if self.flattened and info.field_type == "signature":
+                # MuPDF markiert unsignierte Signaturfelder selbst; nach dem Fixieren entfällt
+                # diese Viewer-Markierung (kein Dokumentinhalt) – daher hier nicht vergleichen.
+                continue
             for w in info.widgets:
                 if value is None:
                     unchanged.append((w.page, w.rect, info.name))
                 elif value.kind in STATE_KINDS:
-                    target = changed if (value.state not in (None, "Off") and w.on_state == value.state) else unchanged
+                    target = (
+                        changed
+                        if (value.state not in (None, "Off") and w.on_state == value.state)
+                        else unchanged
+                    )
                     target.append((w.page, w.rect, info.name))
                 elif value.text:
                     changed.append((w.page, w.rect, info.name))
@@ -650,7 +685,9 @@ class _Qa:
         )
 
 
-def _pixel_box(rect: list[float], scale: float, width: int, height: int, grow: int = 0) -> tuple[int, int, int, int]:
+def _pixel_box(
+    rect: list[float], scale: float, width: int, height: int, grow: int = 0
+) -> tuple[int, int, int, int]:
     x0 = max(0, int(np.floor(rect[0] * scale)) - grow)
     y0 = max(0, int(np.floor(rect[1] * scale)) - grow)
     x1 = min(width, int(np.ceil(rect[2] * scale)) + grow)
@@ -667,6 +704,25 @@ def _appearance_stream(doc: pymupdf.Document, widget_xref: int) -> bytes | None:
         return doc.xref_stream(xref)
     except (ValueError, RuntimeError):
         return None
+
+
+_TF_RE = re.compile(rb"/[^\s/]+\s+([\d.]+)\s+Tf")
+
+
+def _appearance_font_sizes(doc: pymupdf.Document, inspection: FormInspection) -> dict[int, float]:
+    """Schriftgröße je Text-Widget laut Darstellungsstrom (``/Helv 9 Tf``)."""
+    sizes: dict[int, float] = {}
+    for info in inspection.fields:
+        if info.field_type != "text":
+            continue
+        for widget in info.widgets:
+            stream = _appearance_stream(doc, widget.xref)
+            if not stream:
+                continue
+            found = [float(m.group(1)) for m in _TF_RE.finditer(stream)]
+            if found:
+                sizes[widget.xref] = max(found)
+    return sizes
 
 
 def _pdf_escape(data: bytes) -> bytes:

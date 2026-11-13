@@ -75,6 +75,9 @@ class ExportRecord(BaseModel):
     flattened: bool = False
     qa_passed: bool = False
     qa_summary: str = ""
+    file_name: str = ""
+    sha256: str = ""
+    kind: str = "form"  # "form" (Originalvorlage) | "letter" (DIN-5008-Brief)
 
 
 def new_case_id() -> str:

@@ -309,7 +309,7 @@ class OllamaClient:
                 raise OllamaTimeoutError() from None
             log.info("Ollama nicht erreichbar (%s)", type(exc.reason).__name__)
             raise OllamaUnavailableError() from None
-        except (TimeoutError, socket.timeout):
+        except TimeoutError:
             raise OllamaTimeoutError() from None
         except (OSError, HTTPException) as exc:
             log.info("Ollama-Verbindung fehlgeschlagen (%s)", type(exc).__name__)
@@ -323,7 +323,7 @@ class OllamaClient:
         try:
             with response:
                 raw = response.read(MAX_RESPONSE_BYTES + 1)
-        except (TimeoutError, socket.timeout):
+        except TimeoutError:
             raise OllamaTimeoutError() from None
         except (OSError, HTTPException) as exc:
             log.info("Ollama-Antwort abgebrochen (%s)", type(exc).__name__)
@@ -381,7 +381,9 @@ class OllamaClient:
                     modified_at=m.get("modified_at") if isinstance(m.get("modified_at"), str) else None,
                     family=details.get("family") if isinstance(details.get("family"), str) else None,
                     parameter_size=(
-                        details.get("parameter_size") if isinstance(details.get("parameter_size"), str) else None
+                        details.get("parameter_size")
+                        if isinstance(details.get("parameter_size"), str)
+                        else None
                     ),
                     quantization=(
                         details.get("quantization_level")
@@ -440,13 +442,14 @@ class OllamaClient:
         success = False
         lines = 0
         try:
-            with _Watchdog(response, cancel_event):
+            watchdog = _Watchdog(response, cancel_event) if cancel is not None else contextlib.nullcontext()
+            with watchdog:
                 while True:
                     if cancel_event.is_set():
                         raise PullCancelledError()
                     try:
                         raw = response.readline(1024 * 1024)
-                    except (TimeoutError, socket.timeout):
+                    except TimeoutError:
                         if cancel_event.is_set():
                             raise PullCancelledError() from None
                         raise OllamaTimeoutError(
@@ -500,7 +503,9 @@ class OllamaClient:
         duration = time.monotonic() - started
         if not success:
             log.info("Modell-Download ohne Abschlussmeldung beendet (%d Meldungen)", lines)
-            raise OllamaRequestError("Der Modell-Download wurde unvollständig beendet. Bitte erneut versuchen.")
+            raise OllamaRequestError(
+                "Der Modell-Download wurde unvollständig beendet. Bitte erneut versuchen."
+            )
         log.info("Modell-Download abgeschlossen (%.1f s, %d Meldungen)", duration, lines)
 
     def delete_model(self, name: str, confirmed: bool) -> None:

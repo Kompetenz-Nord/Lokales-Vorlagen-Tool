@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import re
@@ -35,10 +36,8 @@ def _make_writable(path: str) -> None:
     if stat.S_ISLNK(mode):
         return
     wanted = stat.S_IRWXU if stat.S_ISDIR(mode) else (stat.S_IRUSR | stat.S_IWUSR)
-    try:
+    with contextlib.suppress(OSError):
         os.chmod(path, stat.S_IMODE(mode) | wanted)
-    except OSError:
-        pass
 
 
 def _on_rm_error(func: Any, path: str, _exc: Any) -> None:
@@ -100,7 +99,7 @@ class TempWorkspace:
 
     def __init__(self, base: Path, job_id: str) -> None:
         self.base = Path(base)
-        self.job_id = _SAFE_ID.sub("_", str(job_id))[:48] or "job"
+        self.job_id = _SAFE_ID.sub("_", str(job_id)).lstrip(".")[:48] or "job"
         self._path: Path | None = None
 
     @property

@@ -238,3 +238,15 @@ def test_multi_page_later_pages_weigh_less():
     page2 = "Anlage: Auszug aus dem Versicherungsschein"
     result = classify_document(doc(page1, page2))
     assert result.doc_type == DocumentType.STATUS_REPORT
+
+
+def test_status_report_tolerates_ocr_l_for_i():
+    """Fremd-OCR liest „Information“ oft als „lnformation“ (kleines L)."""
+    from insurance_app.core.models import DocumentText, ExtractionMethod, PageText
+
+    text = "Jährliche lnformation zur Entwicklung lhrer Versicherung Nr. 8815201-7\nSehr geehrte Damen und Herren,"
+    doc = DocumentText(
+        document_id="D-OCR",
+        pages=[PageText(page_number=1, width=595, height=842, method=ExtractionMethod.PDF_TEXT, text=text)],
+    )
+    assert classify_document(doc).doc_type.value == "STATUS_REPORT"

@@ -160,10 +160,14 @@ class _Checklist:
             )
             return
         if blocking and not existing.blocking:
-            self._items[key] = existing.model_copy(update={"blocking": True, "severity": Severity.ERROR})
+            self._items[key] = existing.model_copy(
+                update={"blocking": True, "severity": Severity.ERROR, "message": message}
+            )
 
     def has_blocking_for(self, field_key: str, exclude_code: str) -> bool:
-        return any(i.blocking and i.field_key == field_key and i.code != exclude_code for i in self._items.values())
+        return any(
+            i.blocking and i.field_key == field_key and i.code != exclude_code for i in self._items.values()
+        )
 
     def items(self) -> list[ChecklistItem]:
         items = list(self._items.values())
@@ -171,7 +175,9 @@ class _Checklist:
         items = [
             i
             for i in items
-            if not (i.code == "CONDITION_UNDECIDED" and i.field_key and self.has_blocking_for(i.field_key, i.code))
+            if not (
+                i.code == "CONDITION_UNDECIDED" and i.field_key and self.has_blocking_for(i.field_key, i.code)
+            )
         ]
         order = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
         return sorted(items, key=lambda i: (not i.blocking, order[i.severity]))
@@ -402,12 +408,13 @@ class _Resolver:
     # -- Hauptablauf ------------------------------------------------------------
     def run(self, extra_messages: list[ValidationMessage] | None) -> FillPlan:
         never_count = 0
-        if self.inspection is None:
+        if self.inspection is None and self.final:
             self.check.add(
-                Severity.ERROR if self.final else Severity.WARNING,
+                Severity.ERROR,
                 "NO_INSPECTION",
-                "Die Vorlage wurde nicht technisch geprüft (Feldbreiten und Ankreuz-Zustände ungeprüft).",
-                blocking=self.final,
+                "Die Vorlage wurde nicht technisch geprüft (Feldbreiten und Ankreuz-Zustände ungeprüft). "
+                "Bitte die Vorschau neu erzeugen.",
+                blocking=True,
             )
         for mapping in self.t.fields:
             if mapping.kind in NEVER_KINDS or mapping.fill_policy == FillPolicy.NEVER:
@@ -456,6 +463,18 @@ class _Resolver:
                         field_key=key,
                         pdf_field=mapping.pdf_field,
                     )
+            return
+
+        if (
+            self.inspection is not None
+            and mapping.overlay_rect is None
+            and self.inspection.field(mapping.pdf_field) is None
+        ):
+            self.mapping_error(
+                mapping,
+                "FIELD_MISSING_IN_PDF",
+                "Das Feld fehlt in der PDF-Vorlage – Zuordnung im Vorlagen-Studio prüfen.",
+            )
             return
 
         if mapping.kind == MappingKind.STATIC:
@@ -520,6 +539,7 @@ class _Resolver:
     def resolve_compose(self, mapping: FieldMapping) -> None:
         assert mapping.compose is not None
         problems = False
+        intentionally_empty = False
         parts: dict[str, str] = {}
         for key, optional in COMPOSE_PLACEHOLDER.findall(mapping.compose):
             self.used_keys.add(key)
@@ -527,6 +547,7 @@ class _Resolver:
             status = fv.status if fv is not None else FieldStatus.MISSING
             if status == FieldStatus.NOT_APPLICABLE:
                 parts[key] = ""
+                intentionally_empty = True
                 continue
             if _released(fv):
                 assert fv is not None
@@ -558,6 +579,15 @@ class _Resolver:
         text = _clean_composed(COMPOSE_PLACEHOLDER.sub(repl, mapping.compose))
         if text:
             self.emit_text(mapping, text, list(parts))
+        elif mapping.required and not intentionally_empty:
+            self.check.add(
+                Severity.ERROR,
+                "REQUIRED_MISSING",
+                f"{mapping.label}: Angabe fehlt",
+                blocking=True,
+                pdf_field=mapping.pdf_field,
+                dedup_by_field=False,
+            )
 
     def resolve_amount(self, mapping: FieldMapping, key: str, value: str) -> None:
         try:
@@ -587,7 +617,9 @@ class _Resolver:
                 self.mapping_error(mapping, "INVALID_VALUE", "Bitte ausdrücklich Ja oder Nein wählen.", key)
                 return
             if fdef.dtype == FieldType.CHOICE and fdef.choices and value not in fdef.choices:
-                self.mapping_error(mapping, "INVALID_VALUE", "Diese Auswahl ist ungültig – bitte neu wählen.", key)
+                self.mapping_error(
+                    mapping, "INVALID_VALUE", "Diese Auswahl ist ungültig – bitte neu wählen.", key
+                )
                 return
         on_state = self.on_state(mapping)
         if on_state is None:

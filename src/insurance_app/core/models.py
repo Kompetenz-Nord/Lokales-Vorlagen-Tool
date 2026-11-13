@@ -7,6 +7,12 @@ Module und müssen abwärtskompatibel (Schema-Version) erfolgen.
 Konventionen
 ------------
 * Seitennummern sind 1-basiert.
+* ``PageText.rotation`` / ``PageInfo.rotation``: Drehung (im Uhrzeigersinn) des
+  Koordinatensystems gegenüber der Rohseite (PDF /Rotate bzw. EXIF, bei OCR zzgl.
+  automatischer Aufrichtung). Wörter, Breite und Höhe beziehen sich auf die
+  angezeigte (aufgerichtete) Seite.
+* Eine Textzeile ist eindeutig durch das Paar ``(Word.block_no, Word.line_no)``
+  bestimmt – bei schrägen Scans nicht allein über die y-Koordinate gruppieren.
 * Koordinaten (``BoundingBox``) liegen im Seitenkoordinatensystem mit Ursprung
   oben links. Für PDFs in PDF-Punkten (1/72 Zoll), für Bilddateien in Punkten
   bezogen auf die angenommene Bildauflösung (siehe ``PageText.source_dpi``).
@@ -136,6 +142,7 @@ class ValidationMessage(_Model):
     code: str  # stabiler maschinenlesbarer Code, z. B. "IBAN_CHECKSUM"
     message: str  # verständliche deutsche Meldung, OHNE vollständige Kundendaten
     field_key: str | None = None
+    pages: list[int] | None = None  # betroffene Seiten (1-basiert), falls seitenbezogen
 
 
 class BoundingBox(_Model):
@@ -279,6 +286,9 @@ class FieldValue(_Model):
     note: str | None = None  # z. B. Hinweis zur Konfliktlage oder Aufteilung Vor-/Nachname
     suggestion_index: int | None = None  # Kandidat, der fachlich vermutlich maßgeblich ist (nur Hinweis!)
     validation: list[ValidationMessage] = Field(default_factory=list)
+    user_marked_unclear: bool = (
+        False  # vom Nutzer bewusst als "unklar" markiert (bleibt bei Neu-Extraktion erhalten)
+    )
 
     # -- typisierte Zugriffe ------------------------------------------------
     def as_date(self) -> date | None:

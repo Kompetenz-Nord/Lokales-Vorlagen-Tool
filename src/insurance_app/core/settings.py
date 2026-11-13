@@ -26,6 +26,8 @@ class Settings(BaseModel):
     min_text_chars_per_page: int = 40  # darunter gilt eine Seite als "ohne brauchbaren Text"
     ocr_low_confidence: float = 0.70  # mittlere Wortkonfidenz darunter -> Warnung + manuelle Prüfung
     tesseract_cmd: str | None = None  # optional expliziter Pfad zu tesseract(.exe)
+    ocr_timeout_s: int = 240  # maximale Laufzeit je Seite
+    docling_artifacts_path: str | None = None  # lokaler Modellordner für Docling (optional)
 
     # Lokale KI (optional, standardmäßig AUS)
     ai_enabled: bool = False
@@ -37,6 +39,7 @@ class Settings(BaseModel):
     # Export
     export_dir: str | None = None  # None -> AppPaths.exports
     flatten_default: bool = False  # finale PDF standardmäßig ausfüllbar lassen
+    letter_form: str = "B"  # DIN 5008 Form A oder B
 
     # Oberfläche
     first_run_completed: bool = False

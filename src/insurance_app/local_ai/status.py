@@ -109,7 +109,7 @@ def _candidate_paths() -> list[Path]:
         local = os.environ.get("LOCALAPPDATA")
         if local:
             paths.append(Path(local) / "Programs" / "Ollama" / "ollama.exe")
-        program_files = os.environ.get("ProgramFiles")
+        program_files = os.environ.get("PROGRAMFILES")
         if program_files:
             paths.append(Path(program_files) / "Ollama" / "ollama.exe")
     else:
@@ -137,7 +137,9 @@ def find_ollama_binary() -> Path | None:
 # ---------------------------------------------------------------------------
 
 
-def detect_status(settings: Settings, client: OllamaClient | None = None, pulling: bool = False) -> LocalAiStatus:
+def detect_status(
+    settings: Settings, client: OllamaClient | None = None, pulling: bool = False
+) -> LocalAiStatus:
     """Aktuellen Zustand der lokalen KI ermitteln (wirft nie).
 
     Kontaktiert ausschließlich den lokalen Ollama-Dienst (Loopback).

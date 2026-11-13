@@ -12,6 +12,7 @@ Grundsätze
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -182,10 +183,8 @@ class CaseRepository:
         docs.mkdir(parents=True, exist_ok=True)
         if os.name == "posix":
             for p in (docs.parent, docs):
-                try:
+                with contextlib.suppress(OSError):
                     os.chmod(p, 0o700)
-                except OSError:
-                    pass
         return docs
 
     # ------------------------------------------------------------------
@@ -277,7 +276,10 @@ class CaseRepository:
                 stored_path = excluded.stored_path,
                 added_at = excluded.added_at
             """,
-            [(d.id, case.id, d.sha256, d.original_name, d.stored_path, _iso(d.added_at)) for d in case.documents],
+            [
+                (d.id, case.id, d.sha256, d.original_name, d.stored_path, _iso(d.added_at))
+                for d in case.documents
+            ],
         )
 
     def _append_history(self, conn: sqlite3.Connection, case: Case) -> None:
@@ -425,6 +427,10 @@ class CaseRepository:
             cur = conn.execute("DELETE FROM cases WHERE id = ?", (case_id,))
             existed = cur.rowcount > 0
             conn.execute("DELETE FROM export_log WHERE case_id = ?", (case_id,))
+        if existed:
+            # WAL-Inhalt sofort zurückschreiben, damit gelöschte Daten nicht im WAL verbleiben
+            with contextlib.suppress(sqlite3.Error, StorageError):
+                self.db.checkpoint()
         folder_existed = folder.exists()
         if folder_existed:
             try:
@@ -507,7 +513,10 @@ class CaseRepository:
             self._discard_copy(dest)
             raise
         log.info(
-            "Dokument %s zu Vorgang %s übernommen (Dublette: %s)", doc_id, case.id, "ja" if doc.excluded else "nein"
+            "Dokument %s zu Vorgang %s übernommen (Dublette: %s)",
+            doc_id,
+            case.id,
+            "ja" if doc.excluded else "nein",
         )
         return doc
 
@@ -694,4 +703,3 @@ class CaseRepository:
                 "Datenordner, fertige PDFs im Exportordner."
             ),
         }
-

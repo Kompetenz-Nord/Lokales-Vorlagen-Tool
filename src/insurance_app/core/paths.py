@@ -94,6 +94,19 @@ class AppPaths:
         return self.data / "logs"
 
     @property
+    def export_log_file(self) -> Path:
+        """Exportprotokoll (JSON Lines, ohne personenbezogene Daten)."""
+        return self.logs_dir / "export_log.jsonl"
+
+    @property
+    def preview_dir(self) -> Path:
+        return self.temp_dir / "vorschau"
+
+    @property
+    def letter_templates_dir(self) -> Path:
+        return self.config_dir / "letter_templates"
+
+    @property
     def settings_file(self) -> Path:
         return self.data / "settings.json"
 

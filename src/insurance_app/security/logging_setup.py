@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import logging.handlers
 import os
@@ -46,10 +47,9 @@ def _own_handlers(logger: logging.Logger) -> list[logging.Handler]:
 def _restrict_permissions(path: Path) -> None:
     if os.name != "posix":
         return
-    try:
+    # Fehler (z. B. fremder Besitzer) sind unkritisch: Logs enthalten nur technische Angaben.
+    with contextlib.suppress(OSError):
         os.chmod(path, 0o600)
-    except OSError:
-        pass  # z. B. fremder Besitzer – Logs enthalten ohnehin nur technische Angaben
 
 
 def configure_logging(log_dir: Path, level: int = logging.INFO, console: bool = False) -> Path:
@@ -61,17 +61,15 @@ def configure_logging(log_dir: Path, level: int = logging.INFO, console: bool = 
     root = logging.getLogger()
     for handler in _own_handlers(root):
         root.removeHandler(handler)
-        try:
+        with contextlib.suppress(OSError):
             handler.close()
-        except OSError:
-            pass
 
     formatter = logging.Formatter(LOG_FORMAT)
     file_handler = logging.handlers.RotatingFileHandler(
         log_file, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8"
     )
     handlers: list[logging.Handler] = [file_handler]
-    if console:
+    if console and sys.stderr is not None:  # in gebauten Fenster-Apps gibt es kein stderr
         handlers.append(logging.StreamHandler(sys.stderr))
     for handler in handlers:
         handler.setFormatter(formatter)
@@ -91,10 +89,8 @@ def shutdown_logging() -> None:
     root = logging.getLogger()
     for handler in _own_handlers(root):
         root.removeHandler(handler)
-        try:
+        with contextlib.suppress(OSError):
             handler.close()
-        except OSError:
-            pass
 
 
 def new_job_id() -> str:

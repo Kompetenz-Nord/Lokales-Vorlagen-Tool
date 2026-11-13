@@ -163,6 +163,8 @@ class Database:
         with self._lock:
             self._conn.execute("PRAGMA foreign_keys = ON")
             self._conn.execute("PRAGMA busy_timeout = 10000")
+            # Gelöschte Inhalte überschreiben (Datenschutz beim Löschen von Vorgängen)
+            self._conn.execute("PRAGMA secure_delete = ON")
             mode = self._conn.execute("PRAGMA journal_mode = WAL").fetchone()
             if mode is None or str(mode[0]).lower() != "wal":
                 log.warning("SQLite-WAL-Modus nicht verfügbar – Standardmodus aktiv")
@@ -173,10 +175,8 @@ class Database:
     def _restrict_permissions(self) -> None:
         if os.name != "posix":
             return
-        try:
+        with contextlib.suppress(OSError):
             os.chmod(self.path, 0o600)
-        except OSError:
-            pass
 
     def _migrate(self) -> None:
         with self._lock:
@@ -271,10 +271,8 @@ class Database:
         with self._lock:
             if self._closed:
                 return
-            try:
+            with contextlib.suppress(sqlite3.Error):
                 self._conn.execute("PRAGMA optimize")
-            except sqlite3.Error:
-                pass
             self._conn.close()
             self._closed = True
 

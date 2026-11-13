@@ -66,7 +66,7 @@ class NetworkBlockedError(PermissionError):
 # Adressprüfung
 # ---------------------------------------------------------------------------
 
-_LOCALHOST_NAMES = frozenset({"localhost", "localhost.", "localhost.localdomain", "ip6-localhost"})
+_LOCALHOST_NAMES = frozenset({"localhost", "localhost."})
 
 
 def is_loopback_host(host: object) -> bool:
