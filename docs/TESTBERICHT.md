@@ -76,7 +76,7 @@ Die „langsamen“ Tests (`slow`) sind Tests mit echter Texterkennung und mit d
 
 | Fehler | Auswirkung | Behebung | Nachweis |
 |---|---|---|---|
-| Sporadischer Absturz der Oberfläche („Segmentation fault“) | Die Speicherbereinigung von Python lief in einem Hintergrund-Thread und gab dort Fenster-Objekte frei. Vorher: 2 Abstürze in 6 Läufen der Oberflächentests. | Bereinigung läuft nur noch im Fenster-Thread (`ui/gc_guard.py`) | 10 von 10 Läufen ohne Absturz; `test_ui_gc_guard.py` |
+| Sporadischer Absturz der Oberfläche („Segmentation fault“) | Die Speicherbereinigung von Python lief in einem Hintergrund-Thread und gab dort Fenster-Objekte frei. Vorher: 2 Abstürze in 6 Läufen der Oberflächentests. | Bereinigung läuft nur noch im Fenster-Thread (`ui/gc_guard.py`) | 18 von 18 Läufen der Oberflächentests ohne Absturz; `test_ui_gc_guard.py` |
 | Katalog schnitt die rechte Spalte ab | „Aktiv“-Marke und Text nicht sichtbar, waagerechter Rollbalken | Import-Schaltfläche in eigener Zeile | `test_catalog_screenshot` prüft die Breite |
 | Fehlermeldung ohne Formathinweis | Bei falschem Datum stand nur „Wert nicht eindeutig lesbar“ | Meldung nennt wieder „TT.MM.JJJJ“ | `test_ui_case.py` |
 | Gedrehte und stark verrauschte Scans wurden nicht gelesen | 0 von 26 Feldern | Lageerkennung und Rauschfilter | `test_bench_ocr_regression.py` |
