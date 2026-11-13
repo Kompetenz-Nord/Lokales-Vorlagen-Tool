@@ -3,13 +3,17 @@
 Grundregeln
 -----------
 * Ins PDF gelangen nur Werte mit Status ``CONFIRMED`` oder ``MANUAL``.
-  ``NOT_APPLICABLE`` bedeutet „bewusst leer“ und erfüllt eine Pflichtangabe.
-* Bedingungen (``conditions``, UND-verknüpft) werden auf freigegebenen,
-  normalisierten Werten ausgewertet. Ist eine Bedingung noch offen und das Feld
-  Pflicht, entsteht genau ein blockierender Punkt je Bedingungsfeld.
+  ``NOT_APPLICABLE`` bedeutet „bewusst leer“ und erfüllt eine Pflichtangabe –
+  außer bei rechtlich relevanten Auswahlfeldern (Ja/Nein, Auswahl): Dort ist
+  „nicht relevant“ keine Entscheidung und gilt als offen.
+* Bedingungen (``conditions``, UND-verknüpft; ``any_conditions``, ODER-verknüpft)
+  werden auf freigegebenen, normalisierten Werten ausgewertet. Ist eine
+  Bedingung noch offen und das Feld Pflicht, entsteht genau ein blockierender
+  Punkt je Bedingungsfeld.
 * Unterschriften und Unterschriftsdaten werden nie befüllt.
-* Rechtlich relevante Felder brauchen eine ausdrückliche, freigegebene
-  Entscheidung – auch für „Nein“ (Kästchen bleibt leer).
+* Rechtlich relevante Felder (Kennzeichen in der Zuordnung ODER im zentralen
+  Feldregister) brauchen eine ausdrückliche, freigegebene Entscheidung – auch
+  für „Nein“ (Kästchen bleibt leer).
 * Checklisten-Meldungen enthalten nur Beschriftungen, nie personenbezogene Werte.
 """
 
@@ -43,6 +47,7 @@ __all__ = [
     "FillPlan",
     "FillValue",
     "format_output_text",
+    "is_legal_decision_field",
     "resolve_fill_values",
 ]
 
@@ -192,6 +197,27 @@ def _released(fv: FieldValue | None) -> bool:
     return fv is not None and fv.status.is_released
 
 
+def is_legal_decision_field(key: str) -> bool:
+    """Rechtlich relevante Ja/Nein- oder Auswahl-Entscheidung laut Feldregister?
+
+    Für solche Felder ist „nicht relevant“ (``NOT_APPLICABLE``) keine Entscheidung:
+    Ein leeres Kästchen hat im Formular selbst eine Bedeutung (z. B. „Rückerstattung
+    gewünscht“), eine fehlende PeP-Angabe ist unzulässig.
+    """
+    fdef = FIELD_REGISTRY.get(key)
+    return bool(fdef is not None and fdef.legal_relevant and fdef.dtype in (FieldType.BOOL, FieldType.CHOICE))
+
+
+def _registry_legal(key: str) -> bool:
+    fdef = FIELD_REGISTRY.get(key)
+    return bool(fdef is not None and fdef.legal_relevant)
+
+
+def _is_legal(mapping: FieldMapping, key: str) -> bool:
+    """Rechtlich relevant laut Zuordnung ODER laut zentralem Feldregister."""
+    return mapping.legal_relevant or _registry_legal(key)
+
+
 def _norm(fv: FieldValue) -> str | None:
     value = fv.normalized_value if fv.normalized_value is not None else fv.value
     if value is None:
@@ -307,21 +333,51 @@ class _Resolver:
         return self.contract.get(key) or self.order.get(key)
 
     # -- Bedingungen ----------------------------------------------------------
-    def conditions_state(self, conditions: list[Condition]) -> tuple[str, list[str]]:
-        """-> ("met" | "unmet" | "undecided", offene Bedingungsfelder)."""
+    def condition_state(self, cond: Condition) -> str:
+        """Eine Bedingung: "met" | "unmet" | "undecided"."""
+        fv = self.fv(cond.field)
+        if fv is not None and fv.status == FieldStatus.NOT_APPLICABLE:
+            if is_legal_decision_field(cond.field):
+                return "undecided"  # „nicht relevant“ ist keine rechtliche Entscheidung
+            return "met" if cond.matches(None) else "unmet"
+        if not _released(fv):
+            return "undecided"
+        assert fv is not None
+        return "met" if cond.matches(_norm(fv)) else "unmet"
+
+    def conditions_state(
+        self, conditions: list[Condition], any_conditions: list[Condition] | None = None
+    ) -> tuple[str, list[str]]:
+        """-> ("met" | "unmet" | "undecided", offene Bedingungsfelder).
+
+        ``conditions`` müssen alle erfüllt sein (UND). Ist ``any_conditions``
+        nicht leer, muss zusätzlich mindestens eine davon erfüllt sein (ODER).
+        Ist eine ODER-Alternative erfüllt, sind offene Alternativen unerheblich.
+        Sonst wird nur die erste offene Alternative gemeldet (Entscheidung
+        der Reihe nach).
+        """
         undecided: list[str] = []
         for cond in conditions:
-            fv = self.fv(cond.field)
-            if fv is not None and fv.status == FieldStatus.NOT_APPLICABLE:
-                if not cond.matches(None):
-                    return "unmet", []
-                continue
-            if not _released(fv):
-                undecided.append(cond.field)
-                continue
-            assert fv is not None
-            if not cond.matches(_norm(fv)):
+            state = self.condition_state(cond)
+            if state == "unmet":
                 return "unmet", []
+            if state == "undecided":
+                undecided.append(cond.field)
+        if any_conditions:
+            open_alternatives: list[str] = []
+            any_met = False
+            for cond in any_conditions:
+                state = self.condition_state(cond)
+                if state == "met":
+                    any_met = True
+                    break
+                if state == "undecided":
+                    open_alternatives.append(cond.field)
+            if not any_met:
+                if not open_alternatives:
+                    return "unmet", []
+                if open_alternatives[0] not in undecided:
+                    undecided.append(open_alternatives[0])
         if undecided:
             return "undecided", undecided
         return "met", []
@@ -338,8 +394,8 @@ class _Resolver:
         """Meldung für einen nicht freigegebenen Quellwert (dedupliziert je Feld)."""
         status = fv.status if fv is not None else FieldStatus.MISSING
         label = _label(key)
-        legal = mapping.legal_relevant
-        decision_kind = mapping.kind in STATE_KINDS
+        legal = _is_legal(mapping, key)
+        decision_kind = mapping.kind in STATE_KINDS or is_legal_decision_field(key)
         if status == FieldStatus.CONFLICT:
             self.check.add(
                 Severity.ERROR,
@@ -362,12 +418,17 @@ class _Resolver:
                 pdf_field=mapping.pdf_field,
             )
             return
-        # MISSING / UNCLEAR
+        # MISSING / UNCLEAR / NOT_APPLICABLE (bei rechtlichen Auswahlfeldern keine Entscheidung)
         if legal and decision_kind:
+            hint = (
+                " („nicht relevant“ ist hier keine Entscheidung)"
+                if status == FieldStatus.NOT_APPLICABLE
+                else ""
+            )
             self.check.add(
                 Severity.ERROR,
                 "LEGAL_DECISION_MISSING",
-                f"Bitte ausdrücklich entscheiden: {label}",
+                f"Bitte ausdrücklich entscheiden: {label}{hint}",
                 blocking=True,
                 field_key=key,
                 pdf_field=mapping.pdf_field,
@@ -449,7 +510,7 @@ class _Resolver:
         )
 
     def resolve_mapping(self, mapping: FieldMapping) -> None:
-        state, undecided = self.conditions_state(mapping.conditions)
+        state, undecided = self.conditions_state(mapping.conditions, mapping.any_conditions)
         if state == "unmet":
             return
         if state == "undecided":
@@ -492,13 +553,17 @@ class _Resolver:
         self.used_keys.add(key)
         fv = self.fv(key)
         if fv is not None and fv.status == FieldStatus.NOT_APPLICABLE:
-            return  # bewusst leer – erfüllt die Pflichtangabe
+            if self.na_is_decision(mapping, key):
+                return  # bewusst leer – erfüllt die Pflichtangabe
+            # rechtliche Auswahl: „nicht relevant“ ist keine ausdrückliche Entscheidung
+            self.report_unreleased(mapping, key, fv, required=True)
+            return
         if not _released(fv):
             self.report_unreleased(mapping, key, fv, required=mapping.required)
             return
         assert fv is not None
         if mapping.fill_policy == FillPolicy.MANUAL_ONLY and fv.status != FieldStatus.MANUAL:
-            blocking = mapping.required or mapping.legal_relevant
+            blocking = mapping.required or _is_legal(mapping, key)
             self.check.add(
                 Severity.ERROR if blocking else Severity.WARNING,
                 "MANUAL_ENTRY_REQUIRED",
@@ -536,6 +601,17 @@ class _Resolver:
         elif mapping.kind == MappingKind.RADIO:
             self.resolve_radio(mapping, key, value)
 
+    @staticmethod
+    def na_is_decision(mapping: FieldMapping, key: str) -> bool:
+        """Erfüllt „nicht relevant“ für diese Zuordnung die Angabe?
+
+        Nein bei rechtlich relevanten Auswahlfeldern laut Register (Ja/Nein,
+        Auswahl) und bei rechtlich relevanten Ankreuz-/Optionsfeldern.
+        """
+        if is_legal_decision_field(key):
+            return False
+        return not (mapping.kind in STATE_KINDS and _is_legal(mapping, key))
+
     def resolve_compose(self, mapping: FieldMapping) -> None:
         assert mapping.compose is not None
         problems = False
@@ -546,17 +622,22 @@ class _Resolver:
             fv = self.fv(key)
             status = fv.status if fv is not None else FieldStatus.MISSING
             if status == FieldStatus.NOT_APPLICABLE:
+                if not self.na_is_decision(mapping, key):
+                    self.report_unreleased(mapping, key, fv, required=True)
+                    problems = True
+                    continue
                 parts[key] = ""
                 intentionally_empty = True
                 continue
             if _released(fv):
                 assert fv is not None
                 if mapping.fill_policy == FillPolicy.MANUAL_ONLY and fv.status != FieldStatus.MANUAL:
+                    blocking = mapping.required or _is_legal(mapping, key)
                     self.check.add(
-                        Severity.ERROR if mapping.required else Severity.WARNING,
+                        Severity.ERROR if blocking else Severity.WARNING,
                         "MANUAL_ENTRY_REQUIRED",
                         f"{_label(key)}: Bitte manuell eintragen.",
-                        blocking=mapping.required,
+                        blocking=blocking,
                         field_key=key,
                         pdf_field=mapping.pdf_field,
                     )

@@ -80,6 +80,9 @@ class FieldMapping(BaseModel):
     conditions: list[Condition] = Field(
         default_factory=list
     )  # UND-verknüpft; Feld nur relevant, wenn alle erfüllt
+    any_conditions: list[Condition] = Field(
+        default_factory=list
+    )  # ODER-verknüpft; leer = keine Einschränkung, sonst muss mindestens eine erfüllt sein
     legal_relevant: bool = False
     fill_policy: FillPolicy = FillPolicy.AUTO
     page: int | None = None  # 1-basiert, zur Kontrolle gegen das PDF
@@ -167,6 +170,7 @@ class TemplateDefinition(BaseModel):
             if m.compose:
                 keys.update(k for k, _ in COMPOSE_PLACEHOLDER.findall(m.compose))
             keys.update(c.field for c in m.conditions)
+            keys.update(c.field for c in m.any_conditions)
         for a in self.acknowledgments:
             keys.add(a.field)
             keys.update(c.field for c in a.conditions)

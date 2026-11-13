@@ -54,10 +54,34 @@ def run_selftest(out=None) -> int:  # noqa: ANN001
                 case = probe.create_sample_case()
                 number = case.contract_fields.get("contract.number")
                 if number is not None and number.normalized_value:
-                    line("OK", "Musterfall: Texterkennung und Extraktion funktionieren.")
+                    line("OK", "Musterfall: Textebene und Extraktion funktionieren.")
                 else:
                     line("FEHLER", "Musterfall: Vertragsnummer nicht erkannt.")
                     ok = False
+                # Echte OCR-Probe: gescannter Musterbeleg ohne Textebene
+                from ..samples import generate_sample_set
+                from ..samples.generator import FILE_POLICY_SCAN
+
+                if tess_ok:
+                    samples = generate_sample_set(Path(tmp) / "muster")
+                    scan_case = probe.create_case("Selbsttest OCR")
+                    probe.add_document(scan_case, samples.files[FILE_POLICY_SCAN])
+                    probe.process_documents(scan_case)
+                    doc = scan_case.documents[0]
+                    used_ocr = bool(doc.text) and any(p.method.value == "TESSERACT" for p in doc.text.pages)
+                    found = (scan_case.contract_fields.get("contract.number") or None) is not None and (
+                        scan_case.contract_fields["contract.number"].normalized_value == "8815201-7"
+                    )
+                    if used_ocr and found:
+                        line("OK", "Texterkennung (OCR): gescannter Musterbeleg korrekt gelesen.")
+                    elif used_ocr:
+                        line(
+                            "WARN",
+                            "Texterkennung (OCR) läuft, die Vertragsnummer des Musterbelegs wurde aber nicht erkannt.",
+                        )
+                    else:
+                        line("FEHLER", "Texterkennung (OCR) wurde nicht ausgeführt.")
+                        ok = False
             finally:
                 probe.close()
     finally:

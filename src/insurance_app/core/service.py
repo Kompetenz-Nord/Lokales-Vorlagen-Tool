@@ -111,6 +111,14 @@ class FieldInputError(ServiceError):
     """Eingabe konnte nicht verstanden werden (z. B. Datum im falschen Format)."""
 
 
+class SettingsError(ServiceError, ValueError):
+    """Ungültige Einstellung (wird nicht gespeichert)."""
+
+
+DEFAULT_NOTE = "Vorschlag der Vorlage – bitte prüfen"
+SOURCE_REMOVED_NOTE = "Die Quelle dieses Werts wurde entfernt – bitte erneut prüfen."
+
+
 # ---------------------------------------------------------------------------
 # Ergebnis-Modelle für die Oberfläche
 # ---------------------------------------------------------------------------
@@ -332,10 +340,21 @@ class AppService:
     def update_settings(self, **changes: object) -> Settings:
         data = self.settings.model_dump()
         data.update(changes)
-        new = Settings.model_validate(data)
-        new.save(self.paths.settings_file)
+        try:
+            new = Settings.model_validate(data)
+        except ValueError as exc:
+            errors = getattr(exc, "errors", None)
+            msg = errors()[0].get("msg", "") if callable(errors) and errors() else str(exc)
+            raise SettingsError(msg.replace("Value error, ", "") or "Ungültige Einstellung.") from exc
+        old = self.settings
         self.settings = new
-        self._build_ocr()
+        try:
+            self._build_ocr()
+        except (ValueError, OSError) as exc:
+            self.settings = old
+            self._build_ocr()
+            raise SettingsError(f"Einstellung nicht übernommen: {getattr(exc, 'user_message', exc)}") from exc
+        new.save(self.paths.settings_file)
         return new
 
     def today(self) -> date:
@@ -384,9 +403,12 @@ class AppService:
         self.repo.archive_case(case_id, archived)
 
     def delete_case(self, case_id: str) -> None:
-        case = self.repo.load_case(case_id)
-        for d in case.documents:
-            self._passwords.pop(d.id, None)
+        try:
+            case = self.repo.load_case(case_id)
+            for d in case.documents:
+                self._passwords.pop(d.id, None)
+        except Exception:  # noqa: BLE001 – beschädigte Vorgänge müssen trotzdem löschbar sein
+            log.warning("Vorgang %s nicht lesbar – wird ohne Laden gelöscht", case_id)
         self.discard_preview(case_id)
         self.repo.delete_case(case_id)
 
@@ -436,13 +458,63 @@ class AppService:
     def set_document_password(self, document_id: str, password: str) -> None:
         self._passwords[document_id] = password
 
+    def _repoint_document_values(self, case: Case, old_id: str, new_id: str) -> None:
+        """Belege auf ein inhaltsgleiches Duplikat umhängen (gleiche SHA-256)."""
+        for key, fv in list(case.contract_fields.items()):
+            cands = [
+                c.model_copy(update={"evidence": c.evidence.model_copy(update={"document_id": new_id})})
+                if c.evidence.document_id == old_id
+                else c
+                for c in fv.candidates
+            ]
+            update: dict[str, object] = {"candidates": cands}
+            if fv.source_document_id == old_id:
+                update["source_document_id"] = new_id
+            case.contract_fields[key] = fv.model_copy(update=update)
+
+    def _drop_document_values(self, case: Case, document_id: str) -> None:
+        """Werte und Belege eines entfernten/ausgeschlossenen Dokuments zurücknehmen.
+
+        Bestätigte Werte aus diesem Dokument werden zurückgesetzt (sie dürfen nicht mehr
+        ohne Quelle in eine Vorlage gelangen). Manuell eingetragene Werte bleiben.
+        """
+        for key, fv in list(case.contract_fields.items()):
+            remaining = [c for c in fv.candidates if c.evidence.document_id != document_id]
+            if fv.status == FieldStatus.CONFIRMED and fv.source_document_id == document_id:
+                case.contract_fields[key] = FieldValue(
+                    key=key, status=FieldStatus.MISSING, candidates=remaining, note=SOURCE_REMOVED_NOTE
+                )
+                case.history.append(
+                    HistoryEntry(
+                        action="source_removed",
+                        field_key=key,
+                        old_status=fv.status,
+                        new_status=FieldStatus.MISSING,
+                        detail=document_id,
+                    )
+                )
+            elif len(remaining) != len(fv.candidates):
+                case.contract_fields[key] = fv.model_copy(update={"candidates": remaining})
+
     def remove_document(self, case: Case, document_id: str) -> None:
+        removed = self._doc(case, document_id)
+        duplicates = [d for d in case.documents if d.duplicate_of == document_id]
+        successor = duplicates[0] if duplicates and not removed.excluded else None
+        if successor is not None:
+            # identische Datei bleibt im Vorgang: Erkennung übernehmen statt verwerfen
+            if removed.text is not None:
+                successor.text = removed.text.model_copy(update={"document_id": successor.id})
+            successor.classification = removed.classification
+            successor.user_doc_type_confirmed = removed.user_doc_type_confirmed
+            successor.check = successor.check or removed.check
+            if document_id in self._passwords:
+                self._passwords[successor.id] = self._passwords[document_id]
+            self._repoint_document_values(case, document_id, successor.id)
+        else:
+            self._drop_document_values(case, document_id)
         self.repo.remove_document(case, document_id)
         self._passwords.pop(document_id, None)
-        if any(d.text for d in case.active_documents()):
-            self.extract_data(case)
-        else:
-            self.save_case(case)
+        self.extract_data(case)
 
     def set_document_excluded(self, case: Case, document_id: str, excluded: bool) -> None:
         doc = self._doc(case, document_id)
@@ -454,7 +526,9 @@ class AppService:
                 detail=document_id,
             )
         )
-        self.save_case(case)
+        if excluded:
+            self._drop_document_values(case, document_id)
+        self.extract_data(case)
 
     def set_document_type(self, case: Case, document_id: str, doc_type: DocumentType) -> None:
         doc = self._doc(case, document_id)
@@ -564,12 +638,21 @@ class AppService:
         existing = dict(case.contract_fields)
         outcome = merge_candidates(results, existing=existing)
         fields = outcome.fields
-        # vom Nutzer bewusst als "unklar" markierte Felder beibehalten
+        kept_marks: set[str] = set()
+        # Vom Nutzer als "unklar" markierte Felder: Markierung bleibt, neue Belege/Konflikte werden sichtbar
         for key, old in existing.items():
-            if old.user_marked_unclear and key in fields:
-                fields[key] = old
+            if not (old.user_marked_unclear and key in fields):
+                continue
+            merged = fields[key]
+            if merged.status == FieldStatus.CONFLICT:
+                fields[key] = merged.model_copy(update={"user_marked_unclear": True})
+            else:
+                fields[key] = old.model_copy(update={"candidates": merged.candidates})
+                kept_marks.add(key)
         case.contract_fields = fields
         for h in outcome.history:
+            if h.field_key in kept_marks:
+                continue
             case.history.append(h)
         warnings = list(outcome.warnings)
         case.metadata["merge_warnings"] = json.dumps([w.model_dump() for w in warnings], ensure_ascii=False)
@@ -698,14 +781,16 @@ class AppService:
     # ------------------------------------------------------------------
     # Stufe 6: Datenfreigabe (Nutzeraktionen)
     # ------------------------------------------------------------------
-    def _set(self, case: Case, new: FieldValue, action: str, detail: str | None = None) -> FieldValue:
+    def _set(
+        self, case: Case, new: FieldValue, action: str, detail: str | None = None, actor: str = "user"
+    ) -> FieldValue:
         old = case.get(new.key)
         fdef = FIELD_REGISTRY[new.key]
         new.validation = validate_field(fdef, new, self.today()) if new.status != FieldStatus.CONFLICT else []
         case.set_field(new)
         case.add_history(
             HistoryEntry(
-                actor="user",
+                actor=actor,
                 action=action,
                 field_key=new.key,
                 old_status=old.status if old else None,
@@ -750,13 +835,26 @@ class AppService:
                 skipped.append(key)
         return skipped
 
-    def edit_field(self, case: Case, key: str, raw_value: str) -> FieldValue:
-        """Wert manuell eintragen/korrigieren (Status MANUAL)."""
+    def edit_field(
+        self,
+        case: Case,
+        key: str,
+        raw_value: str,
+        *,
+        actor: str = "user",
+        detail: str | None = None,
+        proposal: bool = False,
+    ) -> FieldValue:
+        """Wert manuell eintragen/korrigieren (Status MANUAL).
+
+        ``proposal=True`` kennzeichnet einen Vorschlag der Vorlage (z. B. heutiges Briefdatum):
+        sichtbar als „bitte prüfen“, ohne Bestätigungszeitpunkt des Nutzers.
+        """
         fdef = get_field(key)
         raw = (raw_value or "").strip()
         if not raw:
             raise FieldInputError("Bitte einen Wert eingeben oder das Feld als „nicht relevant“ markieren.")
-        normalized, note = normalize_value(fdef, raw)
+        normalized, note = normalize_value(fdef, raw, strict=True)
         if normalized is None:
             hint = {
                 FieldType.DATE: "Bitte im Format TT.MM.JJJJ eingeben.",
@@ -773,11 +871,11 @@ class AppService:
             normalized_value=normalized,
             status=FieldStatus.MANUAL,
             extraction_method=ExtractionMethod.MANUAL,
-            user_confirmed_at=utcnow(),
+            user_confirmed_at=None if proposal else utcnow(),
             candidates=list(old.candidates) if old else [],
-            note=note,
+            note=DEFAULT_NOTE if proposal else note,
         )
-        return self._set(case, new, "edited")
+        return self._set(case, new, "proposed" if proposal else "edited", detail=detail, actor=actor)
 
     def set_choice(self, case: Case, key: str, value: str | bool) -> FieldValue:
         """Ausdrückliche Auswahl für Ja/Nein- oder Auswahlfelder (Status MANUAL)."""
@@ -851,6 +949,12 @@ class AppService:
         return self._set(case, new, "marked_unclear")
 
     def mark_not_applicable(self, case: Case, key: str) -> FieldValue:
+        fdef = get_field(key)
+        if fdef.legal_relevant and fdef.dtype in (FieldType.BOOL, FieldType.CHOICE):
+            raise ServiceError(
+                f"„{fdef.label}“ ist eine rechtlich relevante Entscheidung und kann nicht als "
+                "„nicht relevant“ markiert werden. Bitte ausdrücklich auswählen."
+            )
         fv = case.field(key)
         new = FieldValue(
             key=key,
@@ -887,11 +991,16 @@ class AppService:
             status, reason, version = item.status, item.status_reason, item.version
             if item.status == TemplateStatus.ACTIVE:
                 kind = "form"
-            elif e.letter_file and item.status == TemplateStatus.MISSING_ORIGINAL:
+            elif e.letter_file:
                 try:
                     lt = load_letter_template(self.paths.letter_templates_dir / e.letter_file)
+                    pending = item.status != TemplateStatus.MISSING_ORIGINAL
                     kind, status, version = "letter", TemplateStatus.ACTIVE, lt.version
                     reason = "Kundenschreiben nach DIN 5008 (wird erzeugt – kein Versicherer-Formular)."
+                    if pending:
+                        reason += (
+                            f" Eine importierte Originalvorlage ist noch nicht aktiv ({item.status.value})."
+                        )
                 except (OSError, ValueError) as exc:
                     status, reason = TemplateStatus.ERROR, f"Briefvorlage fehlerhaft ({type(exc).__name__})."
             out.append(
@@ -941,27 +1050,93 @@ class AppService:
             letter=load_letter_template(self.paths.letter_templates_dir / entry.letter_file),
         )  # type: ignore[operator]
 
+    @staticmethod
+    def _acknowledgment_keys(tpl: ActiveTemplate) -> set[str]:
+        acks = tpl.form.acknowledgments if tpl.form else tpl.letter.acknowledgments  # type: ignore[union-attr]
+        return {a.field for a in acks}
+
     def select_template(self, case: Case, catalog_id: str) -> ActiveTemplate:
         tpl = self.active_template(catalog_id)
+        changed = case.template_id != catalog_id or case.template_version != tpl.version
         case.template_id = catalog_id
         case.template_version = tpl.version
         case.add_history(
             HistoryEntry(actor="user", action="template_selected", detail=f"{catalog_id} ({tpl.version})")
         )
+        if changed:
+            # Bestätigungen gelten nur für die Vorlage, für die sie abgegeben wurden
+            for key in self._acknowledgment_keys(tpl):
+                cur = case.get(key)
+                if cur is not None and cur.status != FieldStatus.MISSING:
+                    self._set(
+                        case,
+                        FieldValue(key=key, status=FieldStatus.MISSING),
+                        "reset",
+                        detail="Vorlage gewechselt – Bestätigung erneut erforderlich",
+                        actor="system",
+                    )
         if tpl.kind == "letter" and tpl.letter is not None:
             for key, value in tpl.letter.defaults.items():
                 cur = case.get(key)
                 if cur is None or cur.status == FieldStatus.MISSING:
-                    self.edit_field(case, key, value)
-                    case.history[-1].detail = "Standardwert der Vorlage übernommen – bitte prüfen"
-            cur = case.get("order.letter_date")
-            if cur is None or cur.status == FieldStatus.MISSING:
-                d = self.today()
-                self.edit_field(case, "order.letter_date", f"{d.day:02d}.{d.month:02d}.{d.year}")
-                case.history[-1].detail = "Heutiges Datum als Briefdatum vorgeschlagen – bitte prüfen"
+                    self.edit_field(
+                        case,
+                        key,
+                        value,
+                        actor="system",
+                        proposal=True,
+                        detail="Standardwert der Vorlage – bitte prüfen",
+                    )
+            self._propose_letter_date(case)
         case.stage = max(case.stage, PipelineStage.VORLAGE_WAEHLEN)
         self.save_case(case)
         return tpl
+
+    def _propose_letter_date(self, case: Case) -> None:
+        """Briefdatum vorschlagen bzw. einen unveränderten Vorschlag auf heute aktualisieren."""
+        cur = case.get("order.letter_date")
+        today = self.today()
+        is_proposal = cur is not None and cur.note == DEFAULT_NOTE and cur.user_confirmed_at is None
+        if cur is None or cur.status == FieldStatus.MISSING or (is_proposal and cur.as_date() != today):
+            self.edit_field(
+                case,
+                "order.letter_date",
+                f"{today.day:02d}.{today.month:02d}.{today.year}",
+                actor="system",
+                proposal=True,
+                detail="Heutiges Datum als Briefdatum vorgeschlagen – bitte prüfen",
+            )
+
+    def _template_version_item(self, case: Case, tpl: ActiveTemplate) -> ChecklistItem | None:
+        if case.template_version and case.template_version != tpl.version:
+            return ChecklistItem(
+                severity=Severity.ERROR,
+                code="TEMPLATE_VERSION_CHANGED",
+                message="Die Vorlage wurde inzwischen geändert (neue Version). Bitte die Vorlage erneut auswählen.",
+                blocking=True,
+            )
+        return None
+
+    def _proposal_items(self, case: Case, keys: set[str]) -> list[ChecklistItem]:
+        items = []
+        for key in sorted(keys):
+            fv = case.get(key)
+            if (
+                fv is not None
+                and fv.note == DEFAULT_NOTE
+                and fv.user_confirmed_at is None
+                and fv.status.is_released
+            ):
+                items.append(
+                    ChecklistItem(
+                        severity=Severity.WARNING,
+                        code="PROPOSAL_UNREVIEWED",
+                        message=f"Vorschlag übernommen – bitte prüfen: {self.field_label(key)}",
+                        field_key=key,
+                        blocking=False,
+                    )
+                )
+        return items
 
     def clear_template(self, case: Case) -> None:
         case.template_id = None
@@ -989,10 +1164,22 @@ class AppService:
             template_id=case.template_id,
             relevant_contract_keys=contract_keys,
             relevant_order_keys=order_keys,
-            checklist=plan.checklist,
+            checklist=self._merge_items(self._extra_items(case, tpl), plan.checklist),
             messages=messages,
             hints=hints,
         )
+
+    def _extra_items(self, case: Case, tpl: ActiveTemplate) -> list[ChecklistItem]:
+        items = self._proposal_items(case, tpl.referenced_keys())
+        version_item = self._template_version_item(case, tpl)
+        if version_item is not None:
+            items.insert(0, version_item)
+        return items
+
+    @staticmethod
+    def _merge_items(extra: list[ChecklistItem], items: list[ChecklistItem]) -> list[ChecklistItem]:
+        merged = extra + items
+        return sorted(merged, key=lambda i: (not i.blocking, i.severity != Severity.ERROR))
 
     def _field_messages(self, case: Case, keys: set[str]) -> list[ValidationMessage]:
         out: list[ValidationMessage] = []
@@ -1053,6 +1240,9 @@ class AppService:
         if not case.template_id:
             raise ServiceError("Bitte zuerst eine Vorlage wählen.")
         tpl = self.active_template(case.template_id)
+        if tpl.kind == "letter":
+            self._propose_letter_date(case)
+        extra = self._extra_items(case, tpl)
         self.discard_preview(case.id)
         out_dir = self._preview_dir(case.id)
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -1074,9 +1264,9 @@ class AppService:
                 kind="form",
                 pdf_path=pdf_path,
                 page_images=images,
-                checklist=plan.checklist,
+                checklist=self._merge_items(extra, plan.checklist),
                 qa=qa,
-                blocking=plan.blocking,
+                blocking=plan.blocking or any(i.blocking for i in extra),
                 flatten_allowed=allowed,
                 flatten_reason=reason,
             )
@@ -1099,10 +1289,10 @@ class AppService:
                 kind="letter",
                 pdf_path=pdf_path,
                 page_images=images,
-                checklist=plan.checklist,
+                checklist=self._merge_items(extra, plan.checklist),
                 qa=qa,
                 hints=plan.hints,
-                blocking=plan.blocking,
+                blocking=plan.blocking or any(i.blocking for i in extra),
                 flatten_allowed=False,
                 flatten_reason="Briefe enthalten keine Formularfelder.",
             )
@@ -1117,6 +1307,11 @@ class AppService:
         if not case.template_id:
             raise ServiceError("Bitte zuerst eine Vorlage wählen.")
         tpl = self.active_template(case.template_id)
+        if tpl.kind == "letter":
+            self._propose_letter_date(case)
+        version_item = self._template_version_item(case, tpl)
+        if version_item is not None:
+            raise ExportBlockedError(version_item.message)
         plan = self._plan(case, tpl, mode="final")
         if plan.blocking:
             items = "\n".join(f"• {i.message}" for i in plan.checklist if i.blocking)
@@ -1157,11 +1352,23 @@ class AppService:
             if not qa.passed:
                 failed = "\n".join(f"• {c.message}" for c in qa.errors)
                 raise ExportBlockedError(f"Die Qualitätskontrolle ist nicht bestanden:\n{failed}")
-            exported = self.exporter.finalize(
-                case.id, identity, tmp_pdf, qa, flattened=flattened, created=self.today()
-            )  # type: ignore[arg-type]
+            try:
+                exported = self._finalize_export(case, identity, tmp_pdf, qa, flattened)
+            except OSError as exc:
+                raise ExportBlockedError(
+                    "Der Exportordner ist nicht erreichbar oder nicht beschreibbar – bitte unter "
+                    "„Einstellungen“ einen anderen Ordner wählen."
+                ) from exc
         finally:
             force_rmtree(work)
+        return self._record_export(case, tpl, exported, qa)
+
+    def _finalize_export(self, case: Case, identity: object, tmp_pdf: Path, qa: QaReport, flattened: bool):
+        return self.exporter.finalize(
+            case.id, identity, tmp_pdf, qa, flattened=flattened, created=self.today()
+        )  # type: ignore[arg-type]
+
+    def _record_export(self, case: Case, tpl: ActiveTemplate, exported, qa: QaReport) -> ExportOutcome:  # noqa: ANN001
         entry = exported.log_entry
         self.repo.log_export(
             case.id,
