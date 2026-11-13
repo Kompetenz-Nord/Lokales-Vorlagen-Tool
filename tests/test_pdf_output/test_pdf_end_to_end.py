@@ -188,8 +188,11 @@ def test_sl18477_employer_variant_with_interim_paying(tmp_path):
     assert ins.field("politisch exponierte Person").value == "0"
     assert ins.field("Beitragszahlung").value == "0"
     assert ins.field("IBAN").value == "DE89 3704 0044 0532 0130 00"
-    # privater Teil bleibt leer
-    for name in ("Name Vorname", "Datum 3.1", "Geburtsort", "reduzierter Beitrag", "Amt PeP"):
+    # Private Fortführung im Zwischenzeitraum: die Personendaten in Abschnitt C werden gebraucht …
+    assert ins.field("Name Vorname").value == "Musterfrau, Erika"
+    assert ins.field("Datum 3.1").has_value and ins.field("Geburtsort").has_value
+    # … die übrigen Angaben der rein privaten Fortführung bleiben leer
+    for name in ("reduzierter Beitrag", "Amt PeP"):
         assert not ins.field(name).has_value, name
     assert ins.field("Fortführung der Versicherung").value is None
     # Darstellung des Betrags im deutschen Format
@@ -271,3 +274,5 @@ def test_empty_plan_keeps_form_empty(tmp_path):
     result = TemplateFiller(FONTS_DIR).fill(template, SL13065_PDF, plan, out)
     assert result.filled_fields == []
     assert all(not f.has_value for f in inspect_pdf_form(out).fields)
+    # Nichts einzutragen -> die Ausgabe ist eine bytegenaue Kopie der Originalvorlage
+    assert out.read_bytes() == SL13065_PDF.read_bytes()

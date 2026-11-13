@@ -310,6 +310,11 @@ class TemplateFiller:
                 else:
                     field_values[value.pdf_field] = value
 
+            if not field_values and not overlay_values:
+                # Nichts einzutragen: ``work`` ist bereits die bytegenaue Kopie des Originals.
+                # Ein Speichern würde nur einen leeren Änderungsabschnitt anhängen.
+                return [], False, True
+
             filled: list[str] = []
             found: set[str] = set()
             state_hits: dict[str, bool] = {}

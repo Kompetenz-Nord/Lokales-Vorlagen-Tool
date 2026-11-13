@@ -62,6 +62,13 @@ NOTE_MONTH_DAY = "Bitte nur Monat und Jahr angeben (MM.JJJJ) – das Formular gi
 NOTE_AMOUNT_STRICT = (
     "Bitte einen Betrag wie 1.234,56 eingeben – höchstens zwei Nachkommastellen und ohne weiteren Text."
 )
+NOTE_IBAN_CORRECTED = (
+    "IBAN automatisch korrigiert (Buchstabe statt Ziffer gelesen, Prüfziffer stimmt jetzt) – bitte "
+    "mit dem Dokument vergleichen."
+)
+NOTE_GLYPH_CONFUSION = "Buchstaben könnten verwechselt sein (großes I / kleines l) – bitte prüfen."
+#: Hinweise, bei denen ein Wert nie als „sicher erkannt“ gelten darf (immer Status „Unklar“).
+FORCE_UNCLEAR_NOTES = frozenset({NOTE_IBAN_CORRECTED, NOTE_GLYPH_CONFUSION})
 NOTE_TWO_DIGIT_YEAR = "Das Jahr war nur zweistellig angegeben – bitte das Jahrhundert prüfen."
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]")
@@ -448,6 +455,64 @@ def normalize_iban(raw: str | None) -> str | None:
     if not 15 <= len(iban) <= 34:
         return None
     return iban
+
+
+_IBAN_OCR_SHAPE = re.compile(r"(?<![A-Z0-9])([A-Z]{2}(?:\s?[A-Z0-9]){13,32})(?![A-Z0-9])")
+_IBAN_OCR_DIGITS = str.maketrans({"O": "0", "Q": "0", "I": "1", "L": "1"})
+#: Länder, deren IBAN nach dem Ländercode nur aus Ziffern besteht (nur dort ist O->0 / I->1 eindeutig).
+_IBAN_NUMERIC_COUNTRIES = frozenset({"DE", "AT"})
+
+
+def repair_iban_ocr(raw: str | None) -> str | None:
+    """Typische OCR-Verwechslungen in einer IBAN beheben (``O``→``0``, ``I``/``l``→``1``).
+
+    Es wird nichts geraten: Ein Ergebnis gibt es nur, wenn die IBAN ohne Korrektur
+    ungültig ist und **nach** der Korrektur Länge und Prüfziffer (Modulo 97) stimmen.
+    Korrigiert werden nur die Stellen, die Ziffern sein müssen (Prüfziffer; bei DE/AT
+    auch der Rest). Der Aufrufer muss den Wert als „bitte prüfen“ kennzeichnen.
+    """
+    if not raw:
+        return None
+    from insurance_app.validation.validators import IBAN_LENGTHS, iban_is_valid
+
+    text = raw.replace("\u00a0", " ").replace("\u202f", " ")
+    text = re.sub(r"\bIBAN\b\s*[:.]?", " ", text, flags=re.IGNORECASE)
+    # kleines l wird wie großes I behandelt; erst danach in Großbuchstaben wandeln
+    for m in _IBAN_OCR_SHAPE.finditer(text.replace("l", "I").upper()):
+        compact = re.sub(r"\s", "", m.group(1))
+        country = compact[:2]
+        expected = IBAN_LENGTHS.get(country)
+        if expected is None or len(compact) < expected:
+            continue
+        compact = compact[:expected]
+        if iban_is_valid(compact):
+            return None  # schon gültig – nichts zu korrigieren
+        if country in _IBAN_NUMERIC_COUNTRIES:
+            fixed = country + compact[2:].translate(_IBAN_OCR_DIGITS)
+        else:
+            fixed = country + compact[2:4].translate(_IBAN_OCR_DIGITS) + compact[4:]
+        if fixed != compact and iban_is_valid(fixed):
+            return fixed
+    return None
+
+
+# „§“ wird von der Texterkennung oft als 8, 3, 5, S oder $ gelesen: „gemäß 8 3 Nr. 63 EStG“.
+_PARAGRAPH_OCR = re.compile(
+    r"(?P<lead>\b(?:gemäß|gemäss|gem\.|nach|laut|i\.\s?S\.\s?d\.|im Sinne (?:des|von))\s+)"
+    r"[0-9S$&](?P<num>\s+\d+\s?[a-z]?\s+(?:Nr\.|Abs\.|Satz\b|[A-Z][A-Za-zÄÖÜäöü]*G\b))"
+)
+# Wortanfang „II“ + Kleinbuchstaben gibt es im Deutschen praktisch nicht (gelesen statt „Il“/„ll“).
+_GLYPH_II = re.compile(r"(?<![A-Za-zÄÖÜäöüß])II[a-zäöüß]{2,}")
+
+
+def fix_paragraph_sign(text: str) -> str:
+    """Falsch gelesenes Paragrafenzeichen in einem Gesetzesverweis wiederherstellen."""
+    return _PARAGRAPH_OCR.sub(lambda m: f"{m.group('lead')}§{m.group('num')}", text)
+
+
+def has_glyph_confusion(text: str | None) -> bool:
+    """Deutet der Text auf eine I/l-Verwechslung hin (z. B. „IImweg“ statt „Ilmweg“)?"""
+    return bool(text and _GLYPH_II.search(text))
 
 
 _PLZ = re.compile(r"(?<![\d])(?:(?:D|DE|A|AT|CH)\s?-\s?)?(\d{4,5})(?!\d)")
@@ -912,7 +977,11 @@ def normalize_value(
         result = text.strip(" ,;:")
         if result.endswith(")."):
             result = result[:-1]  # Punkt nach Klammer ist meist ein Scan-Artefakt
+        if dtype == FieldType.TEXT:
+            result = fix_paragraph_sign(result)
         result = result or None
+        if has_glyph_confusion(result):
+            note = NOTE_GLYPH_CONFUSION
     elif dtype == FieldType.DATE:
         if _is_birth_date(fdef):
             result = normalize_date(text, past_only=True, today=today)
@@ -937,6 +1006,10 @@ def normalize_value(
         result = normalize_currency(text)
     elif dtype == FieldType.IBAN:
         result = normalize_iban(text)
+        if not strict:
+            repaired = repair_iban_ocr(raw)
+            if repaired is not None:
+                result, note = repaired, NOTE_IBAN_CORRECTED
     elif dtype == FieldType.POSTAL_CODE:
         result = normalize_postal_code(text)
     elif dtype == FieldType.COUNTRY:

@@ -52,6 +52,25 @@ def _restrict_permissions(path: Path) -> None:
         os.chmod(path, 0o600)
 
 
+class PrivateRotatingFileHandler(logging.handlers.RotatingFileHandler):
+    """Rotierende Logdatei, die nur der angemeldete Nutzer lesen darf (0600, nur POSIX).
+
+    Beim Wechsel auf eine neue Datei („Rollover“) legt Python die Datei neu an –
+    ohne diese Klasse hätte sie wieder die Standardrechte des Systems.
+    """
+
+    def _open(self):  # type: ignore[no-untyped-def]
+        stream = super()._open()
+        _restrict_permissions(Path(self.baseFilename))
+        return stream
+
+    def doRollover(self) -> None:
+        super().doRollover()
+        base = Path(self.baseFilename)
+        for candidate in base.parent.glob(base.name + "*"):
+            _restrict_permissions(candidate)
+
+
 def configure_logging(log_dir: Path, level: int = logging.INFO, console: bool = False) -> Path:
     """Logging der App einrichten und den Pfad der Logdatei zurückgeben."""
     log_dir = Path(log_dir)
@@ -65,7 +84,7 @@ def configure_logging(log_dir: Path, level: int = logging.INFO, console: bool = 
             handler.close()
 
     formatter = logging.Formatter(LOG_FORMAT)
-    file_handler = logging.handlers.RotatingFileHandler(
+    file_handler = PrivateRotatingFileHandler(
         log_file, maxBytes=MAX_BYTES, backupCount=BACKUP_COUNT, encoding="utf-8"
     )
     handlers: list[logging.Handler] = [file_handler]

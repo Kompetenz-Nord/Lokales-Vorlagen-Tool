@@ -100,12 +100,17 @@ def test_rotated_180_is_recovered_by_osd(backend: TesseractBackend, page_image: 
     small = page_image.resize((page_image.width // 2, page_image.height // 2))
     upside_down = small.rotate(180)
     page = backend.recognize(upside_down, 1, A4[0], A4[1], 150.0)
-    assert page.rotation == 180
     assert NUMBER_VALUE in [w.text for w in page.words]
     assert any("gedreht (180°)" in w for w in page.warnings)
     number = next(w for w in page.words if w.text == NUMBER_VALUE)
-    # Koordinaten beziehen sich auf die aufgerichtete Seite
-    assert number.bbox.x0 == pytest.approx(NUMBER_VALUE_POS[0] * 72 / 300, abs=6)
+    # Die Fundstelle bezieht sich auf die angezeigte (auf dem Kopf stehende) Seite: dort liegt der
+    # Wert gespiegelt, seine rechte Kante entspricht der linken Kante auf der aufgerichteten Seite.
+    assert page.rotation == 0
+    assert number.bbox.x1 == pytest.approx(A4[0] - NUMBER_VALUE_POS[0] * 72 / 300, abs=6)
+    # Die Extraktion erkennt die Leserichtung an den Wörtern und richtet die Seite selbst auf
+    from insurance_app.extraction.layout import detect_text_rotation
+
+    assert detect_text_rotation(page.words) == 180
 
 
 @pytest.mark.slow

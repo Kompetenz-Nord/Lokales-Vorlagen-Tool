@@ -111,3 +111,25 @@ def test_new_job_id_survives_redaction():
     job_id = new_job_id()
     assert re.fullmatch(r"J-[0-9A-F]{8}", job_id)
     assert redact(f"[job {job_id}] ok") == f"[job {job_id}] ok"
+
+
+@pytest.mark.skipif(__import__("os").name != "posix", reason="Dateirechte nur unter POSIX")
+def test_rotated_log_files_stay_private(tmp_path, restore_root_logging, monkeypatch):
+    """Auch nach dem Wechsel auf eine neue Logdatei darf nur der Nutzer selbst lesen (0600)."""
+    import os
+
+    from insurance_app.security import logging_setup
+
+    monkeypatch.setattr(logging_setup, "MAX_BYTES", 400)
+    old_umask = os.umask(0o022)  # Systemstandard: neue Dateien wären für alle lesbar
+    try:
+        log_file = configure_logging(tmp_path / "logs")
+        log = logging.getLogger("insurance_app.test")
+        for i in range(40):
+            log.info("Technischer Eintrag Nummer %d zum Auffüllen der Datei", i)
+        _flush()
+    finally:
+        os.umask(old_umask)
+    files = sorted(log_file.parent.glob(LOG_FILE_NAME + "*"))
+    assert len(files) >= 2, files  # es wurde tatsächlich rotiert
+    assert {oct(f.stat().st_mode & 0o777) for f in files} == {"0o600"}

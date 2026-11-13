@@ -137,8 +137,10 @@ def test_with_vlm_measures_second_method_against_local_fake(tmp_path: Path):
     assert report["methods"] == [b.METHOD_OCR, b.METHOD_VLM]
     by_method = {d["method"]: d for d in report["documents"]}
     ocr, vlm = by_method[b.METHOD_OCR], by_method[b.METHOD_VLM]
-    assert ocr["fields"]["contract.start_date"]["outcome"] == "missing"
+    # Seit der Tabellen-Kopfzeilen-Erkennung findet schon die Regel-Extraktion den Wert unter dem Spaltenkopf;
+    # die (simulierte) KI bestätigt ihn nur und darf nichts verschlechtern.
+    assert ocr["fields"]["contract.start_date"]["outcome"] == "correct"
     assert vlm["fields"]["contract.start_date"]["outcome"] == "correct"
-    assert vlm["correct"] == ocr["correct"] + 1
+    assert vlm["correct"] >= ocr["correct"]
     assert vlm["runtime_s"] >= ocr["runtime_s"]
     assert set(report["overall"]) == {b.METHOD_OCR, b.METHOD_VLM}

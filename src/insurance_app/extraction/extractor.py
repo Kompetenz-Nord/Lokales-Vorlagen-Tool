@@ -48,6 +48,7 @@ from .layout import (
     upright_view,
 )
 from .normalize import (
+    FORCE_UNCLEAR_NOTES,
     NOTE_UNREADABLE,
     compact_key,
     frequency_from_text,
@@ -80,6 +81,8 @@ log = logging.getLogger(__name__)
 
 EMBEDDED_OCR_FACTOR = 0.85
 UNPARSABLE_FACTOR = 0.5
+#: Obergrenze für automatisch korrigierte/verdächtige Werte – unter merge.MIN_EXTRACTED_CONFIDENCE (0,45).
+FORCE_UNCLEAR_CONFIDENCE = 0.4
 #: Ein Wertwort unter dieser OCR-Konfidenz macht den ganzen Wert unsicher …
 LOW_WORD_CONFIDENCE = 0.3
 #: … die Wortkonfidenz wird dann auf diesen Wert begrenzt (-> Status „Unklar“)
@@ -299,6 +302,9 @@ class _DocExtractor:
         if normalized is None:
             note = NOTE_UNREADABLE
             confidence *= UNPARSABLE_FACTOR
+        elif note in FORCE_UNCLEAR_NOTES:
+            # automatisch korrigiert bzw. verdächtige Zeichen: nie „sicher erkannt“, immer „Unklar“
+            confidence = min(confidence, FORCE_UNCLEAR_CONFIDENCE)
         cand = Candidate(
             field_key=key,
             value=raw or (normalized or ""),
