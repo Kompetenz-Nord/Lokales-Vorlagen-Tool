@@ -481,6 +481,7 @@ def evaluate_item(
     vlm: VlmRunner | None = None,
     measure_memory: bool = True,
     include_values: bool = False,
+    progress: Callable[[str], None] | None = None,
 ) -> list[DocResult]:
     """Eine Benchmark-Datei messen -> Ergebnis je Verfahren (``ocr_only`` und ggf. ``ocr_vlm``)."""
     ocr_res = _base_result(item, METHOD_OCR)
@@ -511,6 +512,8 @@ def evaluate_item(
         vlm_res.pages, vlm_res.ocr_pages, vlm_res.engines = ocr_res.pages, ocr_res.ocr_pages, ocr_res.engines
         vlm_res.doc_type_detected = ocr_res.doc_type_detected
         vlm_sampler = PeakMemorySampler(enabled=measure_memory)
+        if progress is not None:
+            progress(f"    {item.id}: lokale KI prüft offene Felder (ohne GPU oft mehrere Minuten) …")
         vlm_started = time.perf_counter()
         try:
             with vlm_sampler:
@@ -712,6 +715,14 @@ def render_markdown(report: dict[str, Any], *, include_values: bool = False) -> 
                 f"{_num(r.runtime_s, 2)} s | {_num(r.peak_rss_mb, 0)} ({_num(r.start_rss_mb, 0)}) MB |"
             )
         lines.append("")
+        noted = [r for r in docs if r.method == method and r.notes]
+        if noted:
+            lines.append("Hinweise:")
+            lines.append("")
+            for r in noted:
+                for note in r.notes:
+                    lines.append(f"- {r.item_id}: {note}")
+            lines.append("")
         if include_values:
             lines.append("### Abweichungen je Feld")
             lines.append("")
@@ -780,6 +791,7 @@ def run_benchmark(
     with_vlm: bool = False,
     ollama_url: str | None = None,
     model: str | None = None,
+    vlm_timeout: float | None = None,
     measure_memory: bool = True,
     include_values: bool = False,
     repeat: int = 1,
@@ -798,9 +810,15 @@ def run_benchmark(
     if with_vlm:
         url = ollama_url or settings.ollama_url
         name = model or settings.ai_model
-        runner = VlmRunner(url, name, timeout=float(settings.ai_timeout_s), max_tokens=settings.ai_max_tokens)
+        timeout = float(vlm_timeout) if vlm_timeout else float(settings.ai_timeout_s)
+        runner = VlmRunner(url, name, timeout=timeout, max_tokens=settings.ai_max_tokens)
         ok, reason = runner.availability()
-        vlm_info = {"status": "measured" if ok else "skipped", "url": url, "model": name}
+        vlm_info = {
+            "status": "measured" if ok else "skipped",
+            "url": url,
+            "model": name,
+            "timeout_s": timeout,
+        }
         if ok:
             vlm = runner
         else:
@@ -812,7 +830,14 @@ def run_benchmark(
     started = time.perf_counter()
     for idx, item in enumerate(items, start=1):
         runs = [
-            evaluate_item(item, ocr, vlm=vlm, measure_memory=measure_memory, include_values=include_values)
+            evaluate_item(
+                item,
+                ocr,
+                vlm=vlm,
+                measure_memory=measure_memory,
+                include_values=include_values,
+                progress=say,
+            )
             for _ in range(max(1, int(repeat)))
         ]
         results = _combine_repeats(runs)
@@ -945,6 +970,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--with-vlm", action="store_true", help="Zusätzlich lokale KI (Ollama, nur Loopback).")
     p.add_argument("--ollama-url", help="Adresse des lokalen Ollama-Dienstes (Standard aus Einstellungen).")
     p.add_argument("--model", help="Modellname für die lokale KI (Standard aus Einstellungen).")
+    p.add_argument(
+        "--vlm-timeout",
+        type=float,
+        help="Zeitgrenze je Seite für die lokale KI in Sekunden (Standard aus Einstellungen, 120).",
+    )
     p.add_argument("--quiet", action="store_true", help="Keine Fortschrittsmeldungen.")
     return p
 
@@ -976,6 +1006,7 @@ def main(argv: list[str] | None = None) -> int:
             with_vlm=args.with_vlm,
             ollama_url=args.ollama_url,
             model=args.model,
+            vlm_timeout=args.vlm_timeout,
             measure_memory=not args.no_memory,
             include_values=args.details,
             repeat=args.repeat,

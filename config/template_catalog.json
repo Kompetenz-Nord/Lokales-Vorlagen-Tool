@@ -38,7 +38,7 @@
       "title": "Ordentliche Kündigung",
       "insurer": "versichererunabhängig",
       "form_number": null,
-      "description": "Standardanschreiben zur fristgerechten Kündigung zum ermittelten Vertragsablauf. Als Kundenschreiben nach DIN 5008 erzeugt (kein Versicherer-Formular); eine eigene Originalvorlage kann zusätzlich importiert werden.",
+      "description": "Standardanschreiben zur fristgerechten Kündigung zum gewünschten bzw. nächstmöglichen Termin. Als Kundenschreiben nach DIN 5008 erzeugt (kein Versicherer-Formular); eine eigene Originalvorlage kann zusätzlich importiert werden.",
       "legal_hint": "Kündigungsfrist und -termin sind nur prüfbedürftige Hinweise und müssen anhand der Vertragsbedingungen bestätigt werden.",
       "letter_file": "kuendigung_ordentlich.json"
     },

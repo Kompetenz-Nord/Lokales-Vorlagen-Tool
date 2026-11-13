@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import sys
 from dataclasses import dataclass
@@ -111,15 +112,13 @@ class AppPaths:
         return self.data / "settings.json"
 
     def ensure(self) -> AppPaths:
-        for p in (
-            self.data,
-            self.exports,
-            self.cases_dir,
-            self.user_templates_dir,
-            self.temp_dir,
-            self.logs_dir,
-        ):
+        private = (self.data, self.cases_dir, self.user_templates_dir, self.temp_dir, self.logs_dir)
+        for p in (*private, self.exports):
             p.mkdir(parents=True, exist_ok=True)
+        if os.name == "posix":  # Laufzeitdaten nur für den eigenen Benutzer (PRIV-01)
+            for p in private:
+                with contextlib.suppress(OSError):
+                    os.chmod(p, 0o700)
         return self
 
     @classmethod

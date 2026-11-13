@@ -51,7 +51,7 @@ from ..pdf.qa import QaReport, run_quality_checks
 from ..pdf.render import save_previews
 from ..security.logging_setup import configure_logging
 from ..security.network_guard import install_network_guard
-from ..security.tempfiles import cleanup_stale, force_rmtree
+from ..security.tempfiles import acquire_instance_lock, cleanup_temp_dir, force_rmtree
 from ..storage.db import Database
 from ..storage.repository import CaseRepository
 from ..templates.registry import TemplateRegistry, TemplateRegistryError
@@ -347,9 +347,11 @@ class AppService:
 
         with contextlib.suppress(AttributeError):
             pymupdf.TOOLS.mupdf_display_errors(False)  # Reparaturmeldungen nicht auf stderr
-        removed = cleanup_stale(self.paths.temp_dir)
+        # Einzelinstanz-Sperre: Nur die einzige laufende Instanz räumt alle Reste sofort auf (PRIV-09)
+        self._instance_lock = acquire_instance_lock(self.paths.temp_dir)
+        removed = cleanup_temp_dir(self.paths.temp_dir, exclusive=self._instance_lock.acquired)
         if removed:
-            log.info("Alte temporäre Ordner entfernt: %d", removed)
+            log.info("Temporäre Reste entfernt: %d", removed)
         self._today = today
         self.db = Database(self.paths.database)
         self.repo = CaseRepository(self.db, self.paths)
@@ -374,6 +376,7 @@ class AppService:
                 tesseract_cmd=cmd,
                 artifacts_path=Path(s.docling_artifacts_path) if s.docling_artifacts_path else None,
                 settings=s,
+                temp_base=self.paths.temp_dir,
             ),
         }
         self.ocr = TextRecognitionService(s, backends=backends)
@@ -382,6 +385,7 @@ class AppService:
     def close(self) -> None:
         self.discard_previews()
         self.db.close()
+        self._instance_lock.release()
 
     @property
     def export_dir(self) -> Path:
@@ -389,7 +393,8 @@ class AppService:
 
     @property
     def exporter(self) -> Exporter:
-        return Exporter(self.export_dir, self.paths.export_log_file)
+        # Standard-Exportordner der App: nur für den eigenen Benutzer lesbar (PDF-8)
+        return Exporter(self.export_dir, self.paths.export_log_file, private_dir=not self.settings.export_dir)
 
     def update_settings(self, **changes: object) -> Settings:
         data = self.settings.model_dump()
@@ -457,13 +462,10 @@ class AppService:
         self.repo.archive_case(case_id, archived)
 
     def delete_case(self, case_id: str) -> None:
-        try:
-            case = self.repo.load_case(case_id)
-            for d in case.documents:
-                self._passwords.pop(d.id, None)
-        except Exception:  # noqa: BLE001 – beschädigte Vorgänge müssen trotzdem löschbar sein
-            log.warning("Vorgang %s nicht lesbar – wird ohne Laden gelöscht", case_id)
+        for doc_id in self.repo.document_ids(case_id):  # funktioniert auch bei beschädigtem Vorgang
+            self._passwords.pop(doc_id, None)
         self.discard_preview(case_id)
+        force_rmtree(self.paths.temp_dir / f"export-{case_id}")
         self.repo.delete_case(case_id)
 
     # ------------------------------------------------------------------
@@ -1094,6 +1096,8 @@ class AppService:
         if not raw:
             raise FieldInputError("Bitte einen Wert eingeben oder das Feld als „nicht relevant“ markieren.")
         normalized, note = normalize_value(fdef, raw, strict=True)
+        if normalized is None and note:
+            raise FieldInputError(f"{fdef.label}: {note}")
         if normalized is None:
             hint = {
                 FieldType.DATE: "Bitte im Format TT.MM.JJJJ eingeben.",

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from bench_helpers import FIXTURE_SET, bench, free_loopback_port
+from bench_helpers import FIXTURE_SET, FakeOllama, bench, free_loopback_port
 
 from insurance_app.security.network_guard import is_installed
 
@@ -95,3 +95,50 @@ def test_set_dir_without_manifest_is_generated(tmp_path: Path, capsys):
     assert rc == 0
     assert (target / "manifest.json").is_file()
     assert (target / "MUSTER_BENCH_digital_nachtrag.pdf").is_file()
+
+
+def test_with_vlm_measures_second_method_against_local_fake(tmp_path: Path):
+    """Mit erreichbarem (simuliertem) Ollama entsteht ein zweites Verfahren ``ocr_vlm``."""
+    b = bench()
+    reply = [
+        {
+            "field_key": "contract.start_date",
+            "value": "01.01.2022",
+            "quote": "Versicherungsbeginn 01.01.2022",
+            "uncertainty": "low",
+            "reason": "Spaltenkopf über dem Wert (MUSTER)",
+        }
+    ]
+    out_json = tmp_path / "bericht.json"
+    with FakeOllama(reply) as fake:
+        rc = b.main(
+            [
+                "--set-dir",
+                str(FIXTURE_SET),
+                "--only",
+                "digital_tabelle",
+                "--with-vlm",
+                "--ollama-url",
+                fake.url,
+                "--model",
+                "qwen3-vl:4b",
+                "--vlm-timeout",
+                "10",
+                "--json",
+                str(out_json),
+                "--no-memory",
+                "--quiet",
+            ]
+        )
+        assert fake.chat_calls >= 1
+    assert rc == 0
+    report = json.loads(out_json.read_text(encoding="utf-8"))
+    assert report["vlm"]["status"] == "measured"
+    assert report["methods"] == [b.METHOD_OCR, b.METHOD_VLM]
+    by_method = {d["method"]: d for d in report["documents"]}
+    ocr, vlm = by_method[b.METHOD_OCR], by_method[b.METHOD_VLM]
+    assert ocr["fields"]["contract.start_date"]["outcome"] == "missing"
+    assert vlm["fields"]["contract.start_date"]["outcome"] == "correct"
+    assert vlm["correct"] == ocr["correct"] + 1
+    assert vlm["runtime_s"] >= ocr["runtime_s"]
+    assert set(report["overall"]) == {b.METHOD_OCR, b.METHOD_VLM}

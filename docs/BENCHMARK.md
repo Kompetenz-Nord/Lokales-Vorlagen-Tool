@@ -164,7 +164,9 @@ Gut: Vertragsnummern, Daten und Beträge mit vielen 0/1 wurden auch im Scan rich
 
 **Nicht gemessen – in der Build-Umgebung war kein Netzwerkzugang zu Ollama/Modellen; Messung auf Zielhardware mit: `python3 scripts/benchmark_extraction.py --with-vlm`**
 
-Optional mit `--ollama-url http://127.0.0.1:11434` und `--model qwen3-vl:4b`. Das Skript spricht nur Loopback-Adressen an, der Netzwerk-Wächter der App ist aktiv. Ist kein Ollama-Dienst mit dem Modell erreichbar, meldet es „übersprungen: lokale KI nicht verfügbar“ und misst nur OCR.
+Stand der Build-Umgebung: Gegen Ende der Arbeiten lief auf dem Build-Rechner ein lokaler Ollama-Dienst (127.0.0.1:11434, Version 0.40.16, Modell `qwen3-vl:4b` vorhanden). Ihn hatten parallele Arbeiten gestartet. Ein Probelauf mit `--with-vlm` für eine einzige digitale Datei (`digital_nachtrag`) hatte nach 300 s noch kein Ergebnis und wurde abgebrochen. Gründe: keine GPU, und der Dienst arbeitete gleichzeitig mit einem anderen Modell (Systemlast ca. 9). Eine belastbare Messung liegt daher **nicht** vor. Weitere Läufe wurden unterlassen, um die parallelen Arbeiten nicht zu stören.
+
+Optional mit `--ollama-url http://127.0.0.1:11434`, `--model qwen3-vl:4b` und `--vlm-timeout 600`. Ohne GPU kann eine Seite länger brauchen als die Standard-Zeitgrenze von 120 s je Seite. Dann steht unter „Hinweise“, dass die lokale KI nicht rechtzeitig geantwortet hat. Das Skript spricht nur Loopback-Adressen an, der Netzwerk-Wächter der App ist aktiv. Ist kein Ollama-Dienst mit dem Modell erreichbar, meldet es „übersprungen: lokale KI nicht verfügbar“ und misst nur OCR.
 
 Mit KI verfährt das Skript wie die App: Die KI prüft nur Felder, die fehlen, unklar sind oder einen Konflikt haben (`VlmExtractor` + `reconcile`). Die Tabelle zeigt dann ein zweites Verfahren `ocr_vlm` mit denselben Kennzahlen. Dieses Dokument behauptet **keine** Verbesserung durch die KI, solange diese Messung fehlt.
 
@@ -195,7 +197,7 @@ python3 scripts/benchmark_extraction.py --only drehung_90,tabelle_scan --details
 python3 scripts/benchmark_extraction.py --set-dir tests/fixtures/benchmark --regenerate --generate-only
 ```
 
-Weitere Schalter: `--repeat N` (Median der Laufzeit), `--omp-thread-limit 1`, `--no-memory`, `--seed N`. Tests: `python3 -m pytest tests/test_benchmark` (der Tesseract-Test ist als `slow` markiert).
+Weitere Schalter: `--repeat N` (Median der Laufzeit), `--omp-thread-limit 1`, `--no-memory`, `--seed N`, `--vlm-timeout S`. Tests: `python3 -m pytest tests/test_benchmark` (der Tesseract-Test ist als `slow` markiert).
 
 ## 9. Gefundene Schwachstellen (für die Entwicklung)
 
