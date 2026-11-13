@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "groups": [
+    "Swiss Life bAV",
+    "Kündigung & Widerruf",
+    "Beitragsmanagement",
+    "Betreuung & Enthaftung"
+  ],
+  "entries": [
+    {
+      "id": "swisslife_sl13065_freigabe",
+      "number": 1,
+      "group": "Swiss Life bAV",
+      "title": "Freigabeerklärung Direktversicherung",
+      "insurer": "Swiss Life",
+      "form_number": "SL13065",
+      "description": "Freigabe der Direktversicherung durch den bisherigen Arbeitgeber zum Ende der Betriebszugehörigkeit (Stand 09/2024, 1 Seite).",
+      "mapping_file": "swisslife_sl13065.json",
+      "original_file": "SL13065_Freigabeerklaerung_Direktversicherung_2024-09.pdf",
+      "legal_hint": "Abfindungszustimmung und Rückerstattungsverzicht sind aktive Erklärungen des bisherigen Arbeitgebers und werden nie automatisch gesetzt."
+    },
+    {
+      "id": "swisslife_sl18477_uebernahme",
+      "number": 2,
+      "group": "Swiss Life bAV",
+      "title": "Übernahme der Versicherungsnehmer-Eigenschaft",
+      "insurer": "Swiss Life",
+      "form_number": "SL18477",
+      "description": "Übernahme der Direktversicherung durch einen neuen Arbeitgeber oder private Fortführung durch die versicherte Person (Stand 09/2024, 6 Seiten).",
+      "mapping_file": "swisslife_sl18477.json",
+      "original_file": "SL18477_Uebernahmeerklaerung_Direktversicherung_2024-09.pdf",
+      "legal_hint": "Fortführungsart, Beitragsvariante, PeP-Angabe, Zahlungsart und Beratungsverzicht müssen ausdrücklich gewählt werden."
+    },
+    {
+      "id": "kuendigung_ordentlich",
+      "number": 3,
+      "group": "Kündigung & Widerruf",
+      "title": "Ordentliche Kündigung",
+      "insurer": "versichererunabhängig",
+      "form_number": null,
+      "description": "Standardanschreiben zur fristgerechten Kündigung zum ermittelten Vertragsablauf.",
+      "legal_hint": "Kündigungsfrist und -termin sind nur prüfbedürftige Hinweise und müssen anhand der Vertragsbedingungen bestätigt werden."
+    },
+    {
+      "id": "kuendigung_ausserordentlich",
+      "number": 4,
+      "group": "Kündigung & Widerruf",
+      "title": "Außerordentliche Kündigung / Sonderkündigung",
+      "insurer": "versichererunabhängig",
+      "form_number": null,
+      "description": "Sonderkündigung, z. B. nach Beitragserhöhung oder im Schadenfall.",
+      "legal_hint": "Die konkrete Rechtsgrundlage ist vom Anwender zu bestätigen; die App stellt keine Berechtigung fest."
+    },
+    {
+      "id": "widerruf",
+      "number": 8,
+      "group": "Kündigung & Widerruf",
+      "title": "Widerruf – Antrag / Vertrag / Kündigung",
+      "insurer": "versichererunabhängig",
+      "form_number": null,
+      "description": "Widerruf eines Antrags, Vertrags oder einer Kündigung.",
+      "legal_hint": "Widerrufsfristen werden nicht als gesichert ausgegeben; Grundlage und Frist sind vom Anwender zu prüfen."
+    },
+    {
+      "id": "hdi_beitragsfreistellung",
+      "number": 5,
+      "group": "Beitragsmanagement",
+      "title": "Befristete Beitragsfreistellung / Beitragsreduzierung",
+      "insurer": "HDI",
+      "form_number": null,
+      "description": "Antrag auf befristete Beitragsfreistellung oder Beitragsreduzierung."
+    },
+    {
+      "id": "continentale_beitragserhoehung",
+      "number": 6,
+      "group": "Beitragsmanagement",
+      "title": "Beitragserhöhung / Vertragsanpassung",
+      "insurer": "Continentale",
+      "form_number": null,
+      "description": "Antrag auf Beitragserhöhung bzw. Vertragsanpassung."
+    },
+    {
+      "id": "tecis_bestandsuebertrag",
+      "number": 7,
+      "group": "Betreuung & Enthaftung",
+      "title": "Bestandsübertrag / Betreuerwechsel an tecis AG",
+      "insurer": "tecis",
+      "form_number": null,
+      "description": "Übertragung der Vertragsbetreuung auf die tecis AG."
+    },
+    {
+      "id": "tecis_haftungsfreistellung_ak",
+      "number": 9,
+      "group": "Betreuung & Enthaftung",
+      "title": "Haftungsfreistellung Arbeitskraftabsicherung",
+      "insurer": "tecis",
+      "form_number": null,
+      "description": "Haftungsfreistellung im Zusammenhang mit der Arbeitskraftabsicherung (z. B. BU)."
+    }
+  ]
+}

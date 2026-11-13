@@ -1,0 +1,680 @@
+{
+  "template_id": "swisslife_sl18477_2024-09",
+  "catalog_id": "swisslife_sl18477_uebernahme",
+  "version": "2024-09",
+  "insurer": "Swiss Life Lebensversicherung SE",
+  "insurer_code": "SWISSLIFE",
+  "form_number": "SL18477",
+  "title": "Übernahme der Versicherungsnehmer-Eigenschaft",
+  "short_title": "Uebernahme",
+  "pdf_file": "SL18477_Uebernahmeerklaerung_Direktversicherung_2024-09.pdf",
+  "sha256": "df7ddc8a072173fabd64043a09d1d1c1acf3b1dd771767100a968032403b3b64",
+  "page_count": 6,
+  "pages_to_preserve": [
+    3,
+    4,
+    5,
+    6
+  ],
+  "fields": [
+    {
+      "pdf_field": "Versicherung Nummer",
+      "label": "Versicherung Nr.",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "contract.number"
+    },
+    {
+      "pdf_field": "Versicherte Person",
+      "label": "Versicherte Person (Kopfzeile)",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "compose": "{insured.first_name} {insured.last_name}"
+    },
+    {
+      "pdf_field": "Fortführung der Versicherung durch den neuen Arbeitgeber",
+      "label": "A – Fortführung durch den neuen Arbeitgeber",
+      "kind": "checkbox",
+      "source": "order.continuation_mode",
+      "checked_when": "employer",
+      "required": true,
+      "legal_relevant": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Firma",
+      "label": "A – Firma (genaue Bezeichnung inkl. Rechtsform)",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "order.new_employer_company",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Ansprechpartner",
+      "label": "A – Ansprechpartner",
+      "kind": "text",
+      "required": false,
+      "page": 1,
+      "source": "order.new_employer_contact",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Straße Hausnummer",
+      "label": "A – Straße, Hausnummer (neuer Arbeitgeber)",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "compose": "{order.new_employer_street} {order.new_employer_house_number?}",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Postleitzahl",
+      "label": "A – Postleitzahl (neuer Arbeitgeber)",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "order.new_employer_postal_code",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Ort",
+      "label": "A – Ort (neuer Arbeitgeber)",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "order.new_employer_city",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Datum 1.1",
+      "label": "A – Übernahme mit Wirkung zum 01. (Monat)",
+      "kind": "date_part",
+      "source": "order.takeover_effective_month",
+      "date_part": "month",
+      "required": true,
+      "page": 1,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ],
+      "legal_relevant": true
+    },
+    {
+      "pdf_field": "Datum 1.21",
+      "label": "A – Übernahme mit Wirkung zum 01. (Jahr)",
+      "kind": "date_part",
+      "source": "order.takeover_effective_month",
+      "date_part": "year",
+      "required": true,
+      "page": 1,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ],
+      "legal_relevant": true
+    },
+    {
+      "pdf_field": "Datum 2.1",
+      "label": "A – Beitragszahlung beginnt ab 01. (Monat)",
+      "kind": "date_part",
+      "source": "order.premium_start_month",
+      "date_part": "month",
+      "required": true,
+      "page": 1,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ],
+      "legal_relevant": true
+    },
+    {
+      "pdf_field": "Datum 2.21",
+      "label": "A – Beitragszahlung beginnt ab 01. (Jahr)",
+      "kind": "date_part",
+      "source": "order.premium_start_month",
+      "date_part": "year",
+      "required": true,
+      "page": 1,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ],
+      "legal_relevant": true
+    },
+    {
+      "pdf_field": "Versicherung durch die versicherte Person",
+      "label": "C – Private Fortführung durch die versicherte Person",
+      "kind": "checkbox",
+      "source": "order.continuation_mode",
+      "checked_when": "private",
+      "required": true,
+      "legal_relevant": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Name Vorname",
+      "label": "C – Name, Vorname",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "compose": "{insured.last_name}, {insured.first_name}",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Datum 3.1",
+      "label": "C – Geburtsdatum (Tag)",
+      "kind": "date_part",
+      "source": "insured.birth_date",
+      "date_part": "day",
+      "required": true,
+      "page": 1,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Datum 3.21",
+      "label": "C – Geburtsdatum (Monat)",
+      "kind": "date_part",
+      "source": "insured.birth_date",
+      "date_part": "month",
+      "required": true,
+      "page": 1,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Datum 3.32",
+      "label": "C – Geburtsdatum (Jahr)",
+      "kind": "date_part",
+      "source": "insured.birth_date",
+      "date_part": "year",
+      "required": true,
+      "page": 1,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Straße Hausnummer 1",
+      "label": "C – Straße, Hausnummer",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "compose": "{insured.street} {insured.house_number?}",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Postleitzahl 1",
+      "label": "C – Postleitzahl",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "insured.postal_code",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Ort 1",
+      "label": "C – Ort",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "insured.city",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Geburtsort",
+      "label": "C – Geburtsort",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "insured.birth_place",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Stattsangehörigkeit",
+      "label": "C – Staatsangehörigkeit",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "insured.nationality",
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ]
+    },
+    {
+      "pdf_field": "Fortführung der Versicherung",
+      "label": "C – Die Versicherung wird … (Beitragsvariante)",
+      "kind": "radio",
+      "source": "order.private_contribution_option",
+      "choice_map": {
+        "unchanged": "0",
+        "reduced": "1",
+        "exempt": "2"
+      },
+      "required": true,
+      "legal_relevant": true,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        }
+      ],
+      "page": 1
+    },
+    {
+      "pdf_field": "reduzierter Beitrag",
+      "label": "C – Reduzierter Beitrag (Euro gemäß vereinbarter Zahlungsweise)",
+      "kind": "amount",
+      "source": "order.reduced_premium_amount",
+      "required": true,
+      "legal_relevant": true,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "private"
+        },
+        {
+          "field": "order.private_contribution_option",
+          "equals": "reduced"
+        }
+      ],
+      "page": 1
+    },
+    {
+      "pdf_field": "private Fortführung für den Zwischenzeitraum",
+      "label": "Private Fortführung für den Zwischenzeitraum (bei nicht unmittelbarer Fortführung durch neuen AG)",
+      "kind": "checkbox",
+      "source": "order.interim_private_continuation",
+      "checked_when": "true",
+      "required": true,
+      "legal_relevant": true,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        }
+      ],
+      "page": 1
+    },
+    {
+      "pdf_field": "Beitrag für den Zwischenzeitraum",
+      "label": "Zwischenzeitraum: beitragsfrei / beitragspflichtig",
+      "kind": "radio",
+      "source": "order.interim_contribution_option",
+      "choice_map": {
+        "exempt": "0",
+        "paying": "1"
+      },
+      "required": true,
+      "legal_relevant": true,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
+        }
+      ],
+      "page": 1
+    },
+    {
+      "pdf_field": "privat gezahlter Beitrag für den Zwischenzeitraum",
+      "label": "Zwischenzeitraum: Beitrag (Euro gemäß vereinbarter Zahlungsweise)",
+      "kind": "amount",
+      "source": "order.interim_premium_amount",
+      "required": true,
+      "legal_relevant": true,
+      "conditions": [
+        {
+          "field": "order.continuation_mode",
+          "equals": "employer"
+        },
+        {
+          "field": "order.interim_private_continuation",
+          "equals": "true"
+        },
+        {
+          "field": "order.interim_contribution_option",
+          "equals": "paying"
+        }
+      ],
+      "page": 1
+    },
+    {
+      "pdf_field": "politisch exponierte Person",
+      "label": "D – Politisch exponierte Person (PeP)",
+      "kind": "radio",
+      "source": "order.pep_status",
+      "choice_map": {
+        "no": "0",
+        "yes_office": "1",
+        "yes_related": "2"
+      },
+      "required": true,
+      "legal_relevant": true,
+      "page": 2
+    },
+    {
+      "pdf_field": "Amt PeP",
+      "label": "D – Amt der PeP",
+      "kind": "text",
+      "required": true,
+      "page": 2,
+      "source": "order.pep_office",
+      "conditions": [
+        {
+          "field": "order.pep_status",
+          "equals": "yes_office"
+        }
+      ],
+      "legal_relevant": true
+    },
+    {
+      "pdf_field": "nahestehende Person Amt PeP",
+      "label": "D – Name, Vorname, Amt der Bezugsperson",
+      "kind": "text",
+      "required": true,
+      "page": 2,
+      "source": "order.pep_related_person",
+      "conditions": [
+        {
+          "field": "order.pep_status",
+          "equals": "yes_related"
+        }
+      ],
+      "legal_relevant": true
+    },
+    {
+      "pdf_field": "Beitragszahlung",
+      "label": "E – Beitragszahlung (SEPA-Lastschrift / Überweisung)",
+      "kind": "radio",
+      "source": "order.payment_method",
+      "choice_map": {
+        "sepa": "0",
+        "transfer": "1"
+      },
+      "required": true,
+      "legal_relevant": true,
+      "page": 2
+    },
+    {
+      "pdf_field": "IBAN",
+      "label": "E – IBAN",
+      "kind": "text",
+      "required": true,
+      "page": 2,
+      "source": "order.payment_iban",
+      "conditions": [
+        {
+          "field": "order.payment_method",
+          "in": [
+            "sepa",
+            "transfer"
+          ]
+        }
+      ],
+      "legal_relevant": true
+    },
+    {
+      "pdf_field": "Geldinstitut",
+      "label": "E – Geldinstitut",
+      "kind": "text",
+      "required": false,
+      "page": 2,
+      "source": "order.payment_institution",
+      "conditions": [
+        {
+          "field": "order.payment_method",
+          "in": [
+            "sepa",
+            "transfer"
+          ]
+        }
+      ]
+    },
+    {
+      "pdf_field": "Kontoinhaber",
+      "label": "E – Kontoinhaber",
+      "kind": "text",
+      "required": true,
+      "page": 2,
+      "source": "order.payment_account_holder",
+      "conditions": [
+        {
+          "field": "order.payment_method",
+          "in": [
+            "sepa",
+            "transfer"
+          ]
+        }
+      ],
+      "legal_relevant": true
+    },
+    {
+      "pdf_field": "Datum Unterschrift 1.1",
+      "label": "E – Datum Unterschrift Kontoinhaber (Tag)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 1.21",
+      "label": "E – Datum Unterschrift Kontoinhaber (Monat)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 1.32",
+      "label": "E – Datum Unterschrift Kontoinhaber (Jahr)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Unterschriftsfeld 1",
+      "label": "E – Unterschrift Kontoinhaber",
+      "kind": "signature",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Unterschriftsfeld bleibt immer leer. Die App erzeugt keine Unterschriften."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 2.1",
+      "label": "G – Datum Unterschrift neuer Arbeitgeber (Tag)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 2.21",
+      "label": "G – Datum Unterschrift neuer Arbeitgeber (Monat)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 2.32",
+      "label": "G – Datum Unterschrift neuer Arbeitgeber (Jahr)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Unterschriftsfeld 2",
+      "label": "G – Unterschrift neuer Arbeitgeber mit Firmenstempel",
+      "kind": "signature",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Unterschriftsfeld bleibt immer leer. Die App erzeugt keine Unterschriften."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 3.1",
+      "label": "G – Datum Unterschrift Arbeitnehmer (Tag)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 3.21",
+      "label": "G – Datum Unterschrift Arbeitnehmer (Monat)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 3.32",
+      "label": "G – Datum Unterschrift Arbeitnehmer (Jahr)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Unterschriftsfeld 3",
+      "label": "G – Unterschrift Arbeitnehmer (versicherte Person)",
+      "kind": "signature",
+      "fill_policy": "never",
+      "page": 2,
+      "help": "Unterschriftsfeld bleibt immer leer. Die App erzeugt keine Unterschriften."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 4.1",
+      "label": "Einwilligung – Datum Unterschrift Mitarbeiter (Tag)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 3,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 4.21",
+      "label": "Einwilligung – Datum Unterschrift Mitarbeiter (Monat)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 3,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 4.32",
+      "label": "Einwilligung – Datum Unterschrift Mitarbeiter (Jahr)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 3,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Unterschriftsfeld 4",
+      "label": "Einwilligungs-/Schweigepflichtentbindungserklärung – Unterschrift Mitarbeiter",
+      "kind": "signature",
+      "fill_policy": "never",
+      "page": 3,
+      "help": "Unterschriftsfeld bleibt immer leer. Die App erzeugt keine Unterschriften."
+    }
+  ],
+  "ignored_fields": [
+    "Formular zurücksetzen"
+  ],
+  "acknowledgments": [
+    {
+      "field": "order.advice_waiver_acknowledged",
+      "text": "Abschnitt F (Beratungsverzicht): Der neue Versicherungsnehmer verzichtet mit seiner Unterschrift auf eine Beratung durch Swiss Life. Der Hinweis auf mögliche Nachteile wurde mit dem Kunden besprochen."
+    }
+  ],
+  "plausibility_rules": [
+    "bav_product_expected",
+    "birth_date_plausible",
+    "iban_country_hint"
+  ],
+  "notes": [
+    "Seiten 3–6 (Einwilligungs-/Schweigepflichtentbindungserklärungen, Dienstleisterliste, Datenschutzhinweise) bleiben unverändert erhalten.",
+    "Die Einwilligung auf Seite 3 erteilt ausschließlich der Mitarbeiter selbst durch Unterschrift – die App setzt keine Einwilligung.",
+    "Abschnitt B (Unterlagen) und F (Beratungsverzicht) haben keine Formularfelder; sie werden durch die Unterschriften in G bestätigt.",
+    "Bankdaten werden nur aus der Auftragserfassung übernommen, nie automatisch aus Quelldokumenten (keine fremden Bankdaten)."
+  ],
+  "mapping_confirmed": true
+}

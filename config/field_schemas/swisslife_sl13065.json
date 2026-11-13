@@ -1,0 +1,222 @@
+{
+  "template_id": "swisslife_sl13065_2024-09",
+  "catalog_id": "swisslife_sl13065_freigabe",
+  "version": "2024-09",
+  "insurer": "Swiss Life Lebensversicherung SE",
+  "insurer_code": "SWISSLIFE",
+  "form_number": "SL13065",
+  "title": "Freigabeerklärung bei Direktversicherungen",
+  "short_title": "Freigabe",
+  "pdf_file": "SL13065_Freigabeerklaerung_Direktversicherung_2024-09.pdf",
+  "sha256": "3272c5b1cbb2c685447b6522d2c0be7f52e54744bd27ed9b8005c7526736fc1a",
+  "page_count": 1,
+  "pages_to_preserve": [],
+  "fields": [
+    {
+      "pdf_field": "Versicherung Nummer",
+      "label": "Versicherung Nr.",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "contract.number"
+    },
+    {
+      "pdf_field": "Versicherte Person",
+      "label": "Versicherte Person (Kopfzeile)",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "compose": "{insured.first_name} {insured.last_name}"
+    },
+    {
+      "pdf_field": "Versicherungsnehmer",
+      "label": "Versicherungsnehmer (bisheriger VN/Arbeitgeber)",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "compose": "{policyholder.first_name?} {policyholder.name}"
+    },
+    {
+      "pdf_field": "Name Vorname",
+      "label": "A – Name, Vorname der versicherten Person",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "compose": "{insured.last_name}, {insured.first_name}"
+    },
+    {
+      "pdf_field": "Datum 1.1",
+      "label": "A – Geburtsdatum (Tag)",
+      "kind": "date_part",
+      "source": "insured.birth_date",
+      "date_part": "day",
+      "required": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Datum 1.21",
+      "label": "A – Geburtsdatum (Monat)",
+      "kind": "date_part",
+      "source": "insured.birth_date",
+      "date_part": "month",
+      "required": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Datum 1.32",
+      "label": "A – Geburtsdatum (Jahr)",
+      "kind": "date_part",
+      "source": "insured.birth_date",
+      "date_part": "year",
+      "required": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Straße Hausnummer",
+      "label": "A – Straße, Hausnummer",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "compose": "{insured.street} {insured.house_number?}"
+    },
+    {
+      "pdf_field": "Postleitzahl",
+      "label": "A – Postleitzahl",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "insured.postal_code"
+    },
+    {
+      "pdf_field": "Ort",
+      "label": "A – Ort",
+      "kind": "text",
+      "required": true,
+      "page": 1,
+      "source": "insured.city"
+    },
+    {
+      "pdf_field": "Datum 2.1",
+      "label": "B – Beginn der Betriebszugehörigkeit (Tag)",
+      "kind": "date_part",
+      "source": "employer.employment_start",
+      "date_part": "day",
+      "required": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Datum 2.21",
+      "label": "B – Beginn der Betriebszugehörigkeit (Monat)",
+      "kind": "date_part",
+      "source": "employer.employment_start",
+      "date_part": "month",
+      "required": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Datum 2.32",
+      "label": "B – Beginn der Betriebszugehörigkeit (Jahr)",
+      "kind": "date_part",
+      "source": "employer.employment_start",
+      "date_part": "year",
+      "required": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Datum 3.1",
+      "label": "B – Ende der Betriebszugehörigkeit (Tag)",
+      "kind": "date_part",
+      "source": "employer.employment_end",
+      "date_part": "day",
+      "required": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Datum 3.21",
+      "label": "B – Ende der Betriebszugehörigkeit (Monat)",
+      "kind": "date_part",
+      "source": "employer.employment_end",
+      "date_part": "month",
+      "required": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Datum 3.32",
+      "label": "B – Ende der Betriebszugehörigkeit (Jahr)",
+      "kind": "date_part",
+      "source": "employer.employment_end",
+      "date_part": "year",
+      "required": true,
+      "page": 1
+    },
+    {
+      "pdf_field": "Abfindung",
+      "label": "B – Zustimmung zur Abfindung gem. § 3 BetrAVG",
+      "kind": "checkbox",
+      "source": "order.severance_consent",
+      "checked_when": "true",
+      "required": true,
+      "legal_relevant": true,
+      "page": 1,
+      "help": "Aktive Erklärung des bisherigen Arbeitgebers – muss ausdrücklich mit Ja oder Nein beantwortet werden."
+    },
+    {
+      "pdf_field": "Rückerstattung",
+      "label": "C – Verzicht auf Rückerstattung (Kreuz = KEINE Rückerstattung)",
+      "kind": "checkbox",
+      "source": "order.waive_refund",
+      "checked_when": "true",
+      "required": true,
+      "legal_relevant": true,
+      "page": 1,
+      "help": "Achtung: Das Kreuz bedeutet, dass überzahlte Beiträge NICHT zurückerstattet werden."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 1.1",
+      "label": "D – Datum Unterschrift (Tag)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 1,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 1.21",
+      "label": "D – Datum Unterschrift (Monat)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 1,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Datum Unterschrift 1.32",
+      "label": "D – Datum Unterschrift (Jahr)",
+      "kind": "signature_date",
+      "fill_policy": "never",
+      "page": 1,
+      "help": "Datum zur Unterschrift bleibt leer – wird bei der Unterschrift handschriftlich ergänzt."
+    },
+    {
+      "pdf_field": "Unterschrift",
+      "label": "D – Unterschrift bisheriger Versicherungsnehmer/Arbeitgeber",
+      "kind": "signature",
+      "fill_policy": "never",
+      "page": 1,
+      "help": "Unterschriftsfeld bleibt immer leer. Die App erzeugt keine Unterschriften."
+    }
+  ],
+  "ignored_fields": [
+    "Formular zurücksetzen"
+  ],
+  "acknowledgments": [],
+  "plausibility_rules": [
+    "bav_product_expected",
+    "employment_period_order",
+    "birth_date_plausible"
+  ],
+  "notes": [
+    "Beginn und Ende der Betriebszugehörigkeit stammen nicht aus der Police: verlässliche Quelle oder manuelle Eingabe erforderlich.",
+    "Feld 'Rückerstattung' bedeutet angekreuzt: KEINE Rückerstattung der überzahlten Beiträge.",
+    "Unterschrift und Datum der Unterschrift bleiben leer; Firmenstempel des Arbeitgebers erforderlich."
+  ],
+  "mapping_confirmed": true
+}

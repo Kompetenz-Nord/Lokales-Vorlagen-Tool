@@ -1,0 +1,50 @@
+# --- Laufzeitdaten: NIE versionieren (koennen echte Kundendaten enthalten) ---
+user_data/
+exports/
+*.sqlite
+*.sqlite3
+*.db
+*.db-journal
+*.log
+logs/
+tmp/
+temp/
+.tmp*/
+
+# Echte Kundendokumente nicht einchecken: nur synthetische Testdaten (tests/fixtures/synthetic)
+inbox/
+eingang/
+kundendokumente/
+*.pdf
+!assets/templates/originals/*.pdf
+!tests/fixtures/synthetic/**/*.pdf
+*.png
+*.jpg
+*.jpeg
+*.tif
+*.tiff
+!assets/icons/**
+!assets/templates/previews/**
+!tests/fixtures/synthetic/**
+!docs/images/**
+
+# Python / Build
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.spec.bak
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
