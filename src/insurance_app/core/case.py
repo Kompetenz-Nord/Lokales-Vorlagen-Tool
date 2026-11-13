@@ -93,6 +93,7 @@ class Case(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
     schema_version: int = SCHEMA_VERSION
+    revision: int = 0  # wird bei jedem Speichern erhöht (Schutz gegen Überschreiben veralteter Stände)
     id: str = Field(default_factory=new_case_id)
     title: str = ""  # frei wählbarer Titel; Standard ohne personenbezogene Daten
     created_at: datetime = Field(default_factory=utcnow)

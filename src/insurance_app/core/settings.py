@@ -51,6 +51,22 @@ class Settings(BaseModel):
             raise ValueError("Diese Version unterstützt ausschließlich den Modus LOCAL ONLY.")
         return v
 
+    @field_validator("letter_form")
+    @classmethod
+    def _letter_form(cls, v: str) -> str:
+        if v not in {"A", "B"}:
+            raise ValueError("Briefformat muss DIN 5008 Form A oder B sein.")
+        return v
+
+    @field_validator("ocr_languages")
+    @classmethod
+    def _languages(cls, v: str) -> str:
+        import re
+
+        if not re.fullmatch(r"[a-z_]{3,8}(\+[a-z_]{3,8})*", v or ""):
+            raise ValueError("Ungültige OCR-Sprachangabe (Beispiel: deu+eng).")
+        return v
+
     @field_validator("ocr_backend")
     @classmethod
     def _backend(cls, v: str) -> str:
