@@ -1,13 +1,15 @@
-"""Hauptfenster: Seitenleiste (4 Bereiche) + Inhaltsbereich.
+"""Hauptfenster: Seitenleiste (5 Bereiche) + Inhaltsbereich.
 
 Bereiche
 1. Dashboard / Vorgänge   -> ``pages.dashboard.DashboardPage``  (+ ``pages.case_view.CaseView`` für einen geöffneten Vorgang)
-2. Vorlagen & Formulare   -> ``pages.catalog.CatalogPage``
-3. Vorlagen-Studio        -> ``pages.studio.StudioPage``
-4. Einstellungen          -> ``pages.settings.SettingsPage`` (Datenschutz, lokale Ablage, OCR, lokale KI)
+2. Kundenmappen           -> ``pages.bundles.BundlesPage`` (mehrere Verträge einer Kundin/eines Kunden)
+3. Vorlagen & Formulare   -> ``pages.catalog.CatalogPage``
+4. Vorlagen-Studio        -> ``pages.studio.StudioPage``
+5. Einstellungen          -> ``pages.settings.SettingsPage`` (Datenschutz, lokale Ablage, OCR, lokale KI)
 
 Verträge zwischen Seiten (Konstruktoren)
-* ``DashboardPage(service, open_case: Callable[[str], None])``
+* ``DashboardPage(service, open_case: Callable[[str], None], open_bundle: Callable[[str, list[Path]], None])``
+* ``BundlesPage(service, open_case: Callable[[str], None])`` mit ``select_bundle(id)`` und ``start_import(paths)``
 * ``CaseView(service, show_catalog: Callable[[], None])`` mit ``open_case(case_id)`` und Signal ``case_changed(str)``
 * ``CatalogPage(service, current_case_id: Callable[[], str | None], use_template: Callable[[str], None])``
 * ``StudioPage(service)``; ``SettingsPage(service)``
@@ -15,6 +17,8 @@ Jede Seite bietet ``refresh()`` (wird beim Anzeigen aufgerufen).
 """
 
 from __future__ import annotations
+
+from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -37,6 +41,7 @@ from .theme import LOCAL_ONLY_TEXT
 class MainWindow(QMainWindow):
     NAV = (
         ("dashboard", "🗂  Dashboard / Vorgänge"),
+        ("bundles", "👥  Kundenmappen"),
         ("catalog", "📄  Vorlagen & Formulare"),
         ("studio", "🛠  Vorlagen-Studio"),
         ("settings", "⚙  Einstellungen & Datenschutz"),
@@ -44,6 +49,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, service: AppService) -> None:
         super().__init__()
+        from .pages.bundles import BundlesPage
         from .pages.case_view import CaseView
         from .pages.catalog import CatalogPage
         from .pages.dashboard import DashboardPage
@@ -90,7 +96,8 @@ class MainWindow(QMainWindow):
 
         self.case_view = CaseView(service, show_catalog=lambda: self.show_section("catalog"))
         self.pages: dict[str, QWidget] = {
-            "dashboard": DashboardPage(service, open_case=self.open_case),
+            "dashboard": DashboardPage(service, open_case=self.open_case, open_bundle=self.open_bundle),
+            "bundles": BundlesPage(service, open_case=self.open_case),
             "case": self.case_view,
             "catalog": CatalogPage(
                 service, current_case_id=self.current_case_id, use_template=self.use_template
@@ -125,6 +132,14 @@ class MainWindow(QMainWindow):
         self.case_view.open_case(case_id)
         self._nav_buttons["dashboard"].setChecked(True)
         self.stack.setCurrentWidget(self.case_view)
+
+    def open_bundle(self, bundle_id: str, paths: list[Path] | None = None) -> None:
+        """Seite „Kundenmappen“ mit dieser Mappe zeigen; optional Dateien in die Warteschlange übernehmen."""
+        page = self.pages["bundles"]
+        self.show_section("bundles")
+        page.select_bundle(bundle_id)
+        if paths:
+            page.start_import(list(paths))
 
     def current_case_id(self) -> str | None:
         return self.case_view.current_case_id()

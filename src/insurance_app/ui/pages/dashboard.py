@@ -1,6 +1,10 @@
 """Dashboard „Vorgänge“: Dateien ablegen, Musterfall laden, letzte Vorgänge suchen und verwalten.
 
-Konstruktor laut Hauptfenster: ``DashboardPage(service, open_case)``.
+Konstruktor laut Hauptfenster: ``DashboardPage(service, open_case, open_bundle=None)``.
+
+Mehrere Dateien auf einmal: Die App fragt (``bundle.choice.ask_single_or_bundle``), ob sie zu EINEM
+Vertrag gehören (ein Vorgang, bisheriges Verhalten) oder zu MEHREREN Verträgen (Kundenmappe mit
+Warteschlange; danach wechselt die Ansicht über ``open_bundle(bundle_id, paths)`` zur Mappe).
 """
 
 from __future__ import annotations
@@ -28,6 +32,9 @@ from PySide6.QtWidgets import (
 from ...core.case import CaseSummary
 from ...core.service import AppService
 from .. import dialogs, theme, workers
+from ..bundle import choice
+from ..bundle.common import ask_bundle_title
+from ..bundle.importing import BundleImport, summary_text
 from ..case.common import error_text
 from ..case.drop_area import DropArea
 from ..case.formatting import format_local_time, stage_text
@@ -48,10 +55,17 @@ DELETE_WARNING = (
 
 
 class DashboardPage(QWidget):
-    def __init__(self, service: AppService, open_case: Callable[[str], None]) -> None:
+    def __init__(
+        self,
+        service: AppService,
+        open_case: Callable[[str], None],
+        open_bundle: Callable[[str, list[Path]], None] | None = None,
+    ) -> None:
         super().__init__()
         self.service = service
         self._open_case = open_case
+        self._open_bundle = open_bundle
+        self.bundle_import: BundleImport | None = None
         self._busy = False
         self._summaries: list[CaseSummary] = []
         self._titles: dict[str, str] | None = None
@@ -90,7 +104,8 @@ class DashboardPage(QWidget):
         dv.addWidget(big)
         sub = QLabel(
             "PDF, PNG, JPG oder TIFF – auch mehrere Dateien (z. B. Police, Nachtrag, Standmitteilung, "
-            "Portal-Screenshot). Die Dateien werden nur als Kopie in der lokalen Ablage gespeichert."
+            "Portal-Screenshot). Bei mehreren Dateien fragt die App, ob sie zu einem Vertrag oder zu mehreren "
+            "Verträgen (Kundenmappe) gehören. Die Dateien werden nur als Kopie lokal gespeichert."
         )
         sub.setObjectName("Muted")
         sub.setWordWrap(True)
@@ -111,6 +126,14 @@ class DashboardPage(QWidget):
         )
         self.sample_btn.clicked.connect(self.load_sample)
         btns.addWidget(self.sample_btn)
+        self.bundle_btn = QPushButton("Kundenmappe anlegen (mehrere Verträge)")
+        self.bundle_btn.setAccessibleName("Kundenmappe anlegen")
+        self.bundle_btn.setToolTip(
+            "Für eine Kundin bzw. einen Kunden mit mehreren Verträgen – auch bei verschiedenen Gesellschaften. "
+            "Die App legt je Vertrag einen Vorgang an."
+        )
+        self.bundle_btn.clicked.connect(self.create_bundle_clicked)
+        btns.addWidget(self.bundle_btn)
         btns.addStretch(1)
         dv.addLayout(btns)
         layout.addWidget(self.drop_area)
@@ -265,6 +288,7 @@ class DashboardPage(QWidget):
         self.archive_btn.setText("Wiederherstellen" if s is not None and s.archived else "Archivieren")
         self.choose_btn.setEnabled(idle)
         self.sample_btn.setEnabled(idle)
+        self.bundle_btn.setEnabled(idle)
         self.drop_area.setAcceptDrops(idle)
 
     def _set_busy(self, busy: bool) -> None:
@@ -281,7 +305,11 @@ class DashboardPage(QWidget):
             self.import_files(paths)
 
     def import_files(self, paths: list[Path]) -> str | None:
-        """Neuen Vorgang anlegen, Dateien übernehmen, Vorgang öffnen und Auswertung starten."""
+        """Neuen Vorgang anlegen, Dateien übernehmen, Vorgang öffnen und Auswertung starten.
+
+        Bei mehreren Dateien wird zuerst gefragt: ein Vertrag (ein Vorgang) oder mehrere Verträge
+        (Kundenmappe). Rückgabe: Vorgangs-ID (nur im Fall „ein Vorgang“).
+        """
         if self._busy:
             return None
         files = local_files([Path(p) for p in paths])
@@ -290,6 +318,13 @@ class DashboardPage(QWidget):
                 self, "Keine Dateien", "Es wurden keine Dateien übergeben (Ordner werden nicht übernommen)."
             )
             return None
+        if len(files) > 1:
+            answer = choice.ask_single_or_bundle(self, len(files))
+            if answer is None:
+                return None
+            if answer == choice.CHOICE_BUNDLE:
+                self.import_as_bundle(files)
+                return None
         try:
             case = self.service.create_case()
         except Exception as exc:  # noqa: BLE001
@@ -323,6 +358,64 @@ class DashboardPage(QWidget):
             # Die Vorgangsansicht hat den Auftrag nicht übernommen -> hier auswerten
             self._process_here(case.id)
         return case.id
+
+    # ------------------------------------------------------------------
+    # Kundenmappe (mehrere Verträge)
+    # ------------------------------------------------------------------
+    def create_bundle_clicked(self) -> str | None:
+        """Leere Kundenmappe anlegen und zur Mappe wechseln (dort Dateien ablegen)."""
+        return self._create_bundle([])
+
+    def import_as_bundle(self, files: list[Path]) -> str | None:
+        """Kundenmappe anlegen und die Dateien als Warteschlange einlesen (je Vertrag ein Vorgang)."""
+        return self._create_bundle(files)
+
+    def _create_bundle(self, files: list[Path]) -> str | None:
+        if self._busy:
+            return None
+        title = ask_bundle_title(self)
+        if title is None:
+            return None
+        try:
+            bundle = self.service.create_bundle(title)
+        except Exception as exc:  # noqa: BLE001
+            dialogs.show_error(self, "Kundenmappe nicht angelegt", error_text(exc))
+            return None
+        if self._open_bundle is not None:
+            self._open_bundle(bundle.id, list(files))  # Mappe zeigen; dort läuft die Warteschlange sichtbar
+            return bundle.id
+        if files:
+            self._import_bundle_here(bundle.id, files)
+        else:
+            dialogs.show_info(
+                self,
+                "Kundenmappe angelegt",
+                f"Die Kundenmappe „{bundle.title}“ wurde angelegt. Dokumente legen Sie unter "
+                "„Kundenmappen“ ab.",
+            )
+        return bundle.id
+
+    def _import_bundle_here(self, bundle_id: str, files: list[Path]) -> None:
+        """Ohne Mappen-Seite (z. B. eigenständiges Dashboard): Warteschlange hier abarbeiten."""
+        self._set_busy(True)
+        runner = BundleImport(self, self.service, bundle_id, files)
+        self.bundle_import = runner
+
+        def finished(items: object) -> None:
+            self.bundle_import = None
+            self._set_busy(False)
+            runner.deleteLater()
+            self.refresh()
+            dialogs.show_info(
+                self,
+                "Kundenmappe eingelesen",
+                summary_text(list(items) if isinstance(items, list) else [])
+                + f"\n{len(runner.case_ids)} Vorgänge (je Vertrag einer) – bitte unter „Kundenmappen“ "
+                "den Anwenderwunsch wählen und prüfen.",
+            )
+
+        runner.finished.connect(finished)
+        runner.start()
 
     def _process_here(self, case_id: str) -> None:
         try:

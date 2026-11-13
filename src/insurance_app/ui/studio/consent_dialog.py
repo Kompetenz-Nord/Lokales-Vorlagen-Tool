@@ -73,7 +73,7 @@ class ConsentDialog(QDialog):
             "• Den Download führt der lokal installierte Ollama-Dienst aus. Er lädt das Modell aus der "
             "Ollama-Bibliothek im Internet.\n"
             "• Die App sendet dabei keine Dokumente und keine Vorgangsdaten – nur den Modellnamen an Ollama "
-            "auf diesem Rechner.\n"
+            "auf diesem Rechner. Ihre Dokumentdaten verlassen dieses Gerät nie.\n"
             "• Sie können den Download jederzeit abbrechen und später fortsetzen.\n"
             "• Die App installiert keine Software. Ollama richten Sie selbst ein."
         )

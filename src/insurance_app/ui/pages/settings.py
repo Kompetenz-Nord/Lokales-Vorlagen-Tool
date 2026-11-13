@@ -3,7 +3,8 @@
 Karten: Datenschutz & lokale Ablage · Texterkennung (OCR) · Lokale KI (optional) ·
 Export · Exportprotokoll. Alles bleibt auf diesem Rechner. Die Seite löst keine
 Netzwerkzugriffe aus – außer der Statusprüfung des lokalen Ollama-Dienstes
-(nur 127.0.0.1) und einem Modell-Download nach ausdrücklicher Zustimmung.
+(nur 127.0.0.1, beim Anzeigen) sowie Modell-Download/-Entfernen nach Klick und
+ausdrücklicher Zustimmung. Nur lokale Modelle; Cloud-Modelle werden nicht unterstützt.
 """
 
 from __future__ import annotations
@@ -366,12 +367,18 @@ class SettingsPage(QWidget):
     # Lokale KI
     # ------------------------------------------------------------------
     def _build_ai(self) -> None:
+        """Lokale KI: Status, Ein/Aus, Gerät + Empfehlung, Profile, Modellwahl, Modelltabelle."""
         frame, lay = card()
         frame.setAccessibleName("Lokale KI")
         lay.addWidget(section_title("Lokale KI (optional)"))
         self.ai_panel = LocalAiPanel(self.service)
         lay.addWidget(self.ai_panel)
+        self.ai_frame = frame
         self.content_layout.addWidget(frame)
+
+    def show_ai_section(self) -> None:
+        """Zum Bereich „Lokale KI“ scrollen (z. B. für Hinweise aus dem Vorgang)."""
+        self.scroll.verticalScrollBar().setValue(max(self.ai_frame.y() - 8, 0))
 
     # ------------------------------------------------------------------
     # Export

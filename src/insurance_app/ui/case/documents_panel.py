@@ -197,7 +197,10 @@ class DocumentsPanel(QWidget):
         return case.document(doc_id) if doc_id else None
 
     def update_local_ai_state(self) -> None:
-        """Lokale KI nur anbieten, wenn sie eingerichtet und bereit ist."""
+        """Lokale KI nur anbieten, wenn ``service.ai_models_status()["ready"]`` (Tooltip = Statusmeldung).
+
+        Ist die KI ausgeschaltet, wird der lokale Ollama-Dienst gar nicht erst gefragt.
+        """
         self._ai_ready = False
         if not self.service.settings.ai_enabled:
             reason = (
@@ -206,17 +209,17 @@ class DocumentsPanel(QWidget):
             )
         else:
             try:
-                status = self.service.local_ai_status()
+                status = self.service.ai_models_status()
             except Exception as exc:  # noqa: BLE001 – Statusabfrage darf nie stören
                 reason = f"Status der lokalen KI unbekannt: {error_text(exc)}"
             else:
-                self._ai_ready = getattr(status.state, "name", "") == "READY"
-                reason = (
-                    "Schwierige Seiten zusätzlich mit dem lokalen Bildmodell lesen. Abweichungen erscheinen "
-                    "als Konflikt – die KI entscheidet nie selbst."
-                    if self._ai_ready
-                    else f"Nicht verfügbar: {status.message}"
-                )
+                self._ai_ready = bool(status.get("ready"))
+                reason = str(status.get("message") or "")
+                if self._ai_ready:
+                    reason += (
+                        "\nSchwierige Seiten zusätzlich mit dem lokalen Modell lesen. Abweichungen erscheinen "
+                        "als Konflikt – die KI entscheidet nie selbst."
+                    )
         self.btn_ai.setToolTip(reason)
         self._update_buttons()
 
@@ -441,21 +444,46 @@ class DocumentsPanel(QWidget):
             self._start_processing()  # Zuordnung (z. B. Nachtrag maßgeblich) neu berechnen
 
     def local_ai_clicked(self) -> None:
+        """Lokale KI-Zweitprüfung im Hintergrund (abbrechbar); danach Ergebnis zeigen und Datenprüfung öffnen."""
+
         def done(result: object) -> None:
-            data = result if isinstance(result, dict) else {}
-            msg = data.get("message") or (
-                f"Die lokale KI hat {data.get('candidates', 0)} Vorschläge geliefert. "
-                "Abweichungen erscheinen in der Datenprüfung als Konflikt."
-            )
-            errors = data.get("errors") or []
-            if errors:
-                msg += "\n\nHinweise:\n" + "\n".join(f"• {e}" for e in errors[:5])
-            dialogs.show_info(self, "Lokale KI-Zweitprüfung", str(msg))
+            dialogs.show_info(self, "Lokale KI-Zweitprüfung", local_ai_result_text(result))
+            self._goto_review()  # Vorgang ist neu geladen – Abweichungen stehen dort als Konflikt
+
+        def failed(exc: BaseException, cancelled: bool) -> None:
+            if cancelled:
+                dialogs.show_info(
+                    self,
+                    "Abgebrochen",
+                    "Die lokale KI-Zweitprüfung wurde abgebrochen. Bereits geprüfte Werte bleiben unverändert.",
+                )
+            else:
+                dialogs.show_error(self, "Lokale KI-Zweitprüfung nicht möglich", error_text(exc))
+            self.update_local_ai_state()
 
         self.controller.run(
             self._task_parent or self,
-            "Lokale KI prüft schwierige Seiten …",
+            "Lokale KI prüft schwierige Seiten (nur auf diesem Rechner) …",
             lambda case, progress, cancel: self.service.run_local_ai(case, progress=progress, cancel=cancel),
             done,
-            error_title="Lokale KI-Zweitprüfung nicht möglich",
+            failed,
         )
+
+
+def local_ai_result_text(result: object) -> str:
+    """Rückmeldung nach der lokalen KI: verwendete Modelle, Anzahl Vorschläge, Hinweise/Fehler."""
+    data = result if isinstance(result, dict) else {}
+    models = [str(m) for m in data.get("models_used") or []]
+    lines = [
+        f"Verwendete Modelle: {', '.join(models) if models else '–'}",
+        f"Die lokale KI hat {data.get('candidates', 0)} Vorschläge geliefert. Abweichungen von bereits "
+        "erkannten Werten erscheinen in der Datenprüfung als Konflikt – Sie entscheiden.",
+    ]
+    errors = [str(e) for e in data.get("errors") or []]
+    if errors:
+        lines.append("")
+        lines.append("Hinweise:")
+        lines += [f"• {e}" for e in errors[:5]]
+        if len(errors) > 5:
+            lines.append(f"• … und {len(errors) - 5} weitere")
+    return "\n".join(lines)

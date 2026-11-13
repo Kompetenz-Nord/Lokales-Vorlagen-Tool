@@ -22,6 +22,8 @@
 
 - [Funktionsumfang](#funktionsumfang)
 - [Musterfall in 2 Minuten](#musterfall-in-2-minuten)
+- [Kundenmappen (mehrere Verträge auf einmal)](#kundenmappen-mehrere-verträge-auf-einmal)
+- [Lokale KI (optional)](#lokale-ki-optional)
 - [Systemvoraussetzungen](#systemvoraussetzungen)
 - [Installation und Start](#installation-und-start)
 - [Wo liegen Daten und Exporte?](#wo-liegen-daten-und-exporte)
@@ -49,7 +51,9 @@
 | 8 Vorschau und Qualitätskontrolle | Probe-PDF, Checkliste offener Punkte und technische Prüfung (QA = Qualitätskontrolle). Jede Seite wird mit zwei Programmen dargestellt (MuPDF und PDFium). | Reiter „Vorschau & Export“ |
 | 9 Export | Erst nach Klick auf „PDF jetzt erzeugen“ und bestandener QA. Die PDF landet im Exportordner. Ein Exportprotokoll ohne Personendaten wird ergänzt. | Reiter „Vorschau & Export“ |
 
-**Optional:** Eine lokale KI (Ollama mit Vision-Modell) kann schwer lesbare Seiten zusätzlich lesen. Sie ist standardmäßig **aus**. Ihre Vorschläge müssen Sie wie alle anderen Werte prüfen. Details: [docs/LOKALE_KI.md](docs/LOKALE_KI.md).
+**Mehrere Verträge auf einmal:** In einer **Kundenmappe** legen Sie alle Unterlagen einer Kundin ab. Die App bildet je Vertrag einen Vorgang. Siehe [Kundenmappen](#kundenmappen-mehrere-verträge-auf-einmal).
+
+**Optional:** Eine lokale KI (Ollama mit GLM-OCR, Qwen3-VL und optional Gemma 4) kann schwer lesbare Seiten zusätzlich lesen. Sie ist standardmäßig **aus**. Ihre Vorschläge müssen Sie wie alle anderen Werte prüfen. Siehe [Lokale KI](#lokale-ki-optional).
 
 ### Vorlagenkatalog (9 Einträge)
 
@@ -102,6 +106,67 @@ Geprüft am 13.11.2026 über die Programmlogik (`AppService`): Der Ablauf führt
 
 ---
 
+## Kundenmappen (mehrere Verträge auf einmal)
+
+**Kurz gesagt:** Eine Kundin hat oft mehrere Verträge. In einer **Kundenmappe** legen Sie alle Unterlagen auf einmal ab. Die App sortiert sie nach Vertragsnummer in Vorgänge. Je Vertrag wählen Sie den **Anwenderwunsch** (die Vorlage, z. B. Kündigung oder Freigabe) und prüfen die Werte. Danach erzeugt **„Alle fertigen erzeugen“** alle fertig geprüften Verträge in einem Durchgang.
+
+| Regel | Beispiel |
+|---|---|
+| Gleiche Vertragsnummer → **ein** Vorgang | Police und Nachtrag zu demselben Vertrag landen zusammen |
+| Andere Vertragsnummer → **eigener** Vorgang | 3 Verträge → 3 Vorgänge |
+| Später nachgereichte Datei → zum vorhandenen Vorgang ihres Vertrags | Der Nachtrag kommt eine Woche später |
+| Keine Vertragsnummer erkannt → eigener Vorgang für diese Datei | Bitte prüfen, zu welchem Vertrag die Datei gehört |
+| Prüfung durch einen Menschen bleibt Pflicht | „Alle fertigen erzeugen“ überspringt Vorgänge ohne Anwenderwunsch oder mit offenen Pflichtpunkten – mit Begründung |
+
+Ablauf in der App (Bezeichnungen der geplanten Oberfläche; kleine Abweichungen möglich):
+
+1. Seitenleiste **„Kundenmappen“** → **„Neue Kundenmappe“**. Titel bitte ohne sensible Daten (z. B. ein Kürzel statt des Namens).
+2. Dateien ablegen. Die **„Warteschlange“** arbeitet sie nacheinander ab. Status je Datei: Wartet, Wird ausgewertet, Fertig, Passwort erforderlich, Nicht verarbeitbar, Abgebrochen.
+3. **„Verträge in dieser Mappe“** zeigt je Vertrag: Versicherer, die letzten Zeichen der Vertragsnummer, Dokumentarten, Arbeitsstand, gewählte Vorlage und ob er fertig ist.
+4. Je Vertrag den **„Anwenderwunsch“** wählen, den Vorgang öffnen und die Werte wie gewohnt prüfen (Abschnitt „Musterfall“ oben).
+5. **„Alle fertigen erzeugen“**. Jede PDF durchläuft dieselbe Qualitätskontrolle wie beim einzelnen Vorgang.
+
+Schritt für Schritt: [docs/BEDIENUNG.md – Kundenmappe](docs/BEDIENUNG.md#kundenmappe-1-kundin-mehrere-verträge).
+
+---
+
+## Lokale KI (optional)
+
+**Kurz gesagt:** Die App funktioniert ohne KI. Mit KI: **GLM-OCR** liest schwierige Scans und Tabellen. **Qwen3-VL** springt ein, wenn GLM-OCR fehlt oder scheitert. **Gemma 4** kann optional gegenprüfen. Alles läuft lokal über **Ollama** (kostenloses Programm, das KI-Modelle auf dem eigenen Rechner ausführt) unter `127.0.0.1`. Nichts geht in die Cloud. KI-Werte bestätigt immer ein Mensch.
+
+| Profil | Modelle | Download | Passt zu (Richtwerte, nicht auf Zielgeräten gemessen) |
+|---|---|---|---|
+| kompakt | `glm-ocr` | 2,66 GB | ab 8 GB Arbeitsspeicher; Mac mit Apple Silicon oder 64-Bit-Windows (Grafikkarte nicht erforderlich) |
+| **standard** (empfohlen) | `glm-ocr` + `qwen3-vl:4b` | 6,00 GB | 16 GB; Mac mit Apple Silicon oder PC mit NVIDIA-Grafikkarte (6–8 GB Grafikspeicher) |
+| maximal | zusätzlich `gemma4:e4b` | 12,58 GB | 32 GB; Mac M-Pro/Max oder PC mit NVIDIA-Grafikkarte (12 GB Grafikspeicher) |
+
+Einrichten – das Skript prüft den Rechner, schlägt ein Profil vor und fragt vor jedem Schritt:
+
+```bash
+./scripts/install_local_ai_macos.sh --dry-run      # macOS: nur prüfen, nichts ändern
+./scripts/install_local_ai_macos.sh standard       # macOS: einrichten (Modelle erst nach Rückfrage)
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install_local_ai_windows.ps1 -DryRun
+powershell -ExecutionPolicy Bypass -File scripts\install_local_ai_windows.ps1 -Profile standard
+```
+
+Oder von Hand, wenn Ollama schon installiert ist:
+
+```bash
+ollama pull glm-ocr
+ollama pull qwen3-vl:4b
+ollama pull gemma4:e4b      # nur für die Gegenprüfung
+ollama run qwen3-vl:4b      # kurzer Test im Chat, beenden mit /bye
+```
+
+Danach in der App: „Einstellungen & Datenschutz“ → „Lokale KI (optional)“ → „Lokale KI aktivieren“ → „Lokale Laufzeit testen“. Dort legen Sie auch fest, welches Modell aktiv läuft („Aktives Modell“, „Ausweichmodell“, „Gegenprüfung“).
+
+> **Ehrlicher Stand:** Die Skripte wurden nicht auf einem echten Mac oder Windows-PC ausgeführt (macOS-Skript: Testlauf und nachgebildete Befehle unter Linux; Windows-Skript: nicht ausgeführt). Gemessene Laufzeiten stehen nur in [docs/BENCHMARK.md](docs/BENCHMARK.md). Alles Weitere: [docs/LOKALE_KI.md](docs/LOKALE_KI.md).
+
+---
+
 ## Systemvoraussetzungen
 
 | Bereich | Anforderung | Status |
@@ -113,7 +178,7 @@ Geprüft am 13.11.2026 über die Programmlogik (`AppService`): Der Ablauf führt
 | Tesseract OCR | Version 5 mit Sprachpaket **Deutsch** (`deu`) | optional, aber für Scans und Bilder nötig. Ohne Tesseract liest die App nur PDFs mit Textebene. |
 | Speicherplatz | Python-Pakete unter Linux gemessen: ca. 0,9 GB (davon PySide6 ca. 0,7 GB) | Windows/macOS nicht gemessen |
 | Bildschirm | Fenster mindestens 1100 × 700 Pixel | – |
-| Lokale KI (optional) | Ollama und ein Vision-Modell (mehrere GB) | siehe [docs/LOKALE_KI.md](docs/LOKALE_KI.md) |
+| Lokale KI (optional) | Ollama (für die Modelle ab Version 0.30.0) und je nach Profil 2,66–12,58 GB Modelle; Richtwerte 8–32 GB Arbeitsspeicher | Profile und Grafikkarten: [docs/LOKALE_KI.md](docs/LOKALE_KI.md) |
 
 ---
 
@@ -347,7 +412,7 @@ src/insurance_app/
   samples/                  Musterfall-Generator (synthetisch)
   ui/                       PySide6-Oberfläche
 packaging/                  PyInstaller-Spezifikation
-scripts/                    Einrichtung und Build für Windows/macOS, Musterdateien, Benchmark
+scripts/                    Einrichtung und Build für Windows/macOS, lokale KI (install_local_ai_*), Musterdateien, Benchmark
 tests/                      Automatische Tests (nur synthetische Daten)
 docs/                       Dokumentation
 ```
@@ -364,7 +429,7 @@ Für Entwickler: [ARCHITECTURE.md](ARCHITECTURE.md) (Aufbau), [IMPLEMENTATION_PL
 | [docs/DATENSCHUTZ.md](docs/DATENSCHUTZ.md) | Technische Schutzmaßnahmen, Speicherorte, Löschen, Pflichten des Betreibers |
 | [docs/FELDZUORDNUNG_SWISSLIFE.md](docs/FELDZUORDNUNG_SWISSLIFE.md) | Jedes PDF-Feld von SL13065 und SL18477 mit Quelle und Regel |
 | [docs/BRIEFVORLAGEN.md](docs/BRIEFVORLAGEN.md) | Die 6 DIN-5008-Briefe, Textbausteine, Hinweise, Prüfung der bisherigen Vorlagen |
-| [docs/LOKALE_KI.md](docs/LOKALE_KI.md) | Optionale lokale KI: Einrichtung, Grenzen, ehrlicher Teststand |
+| [docs/LOKALE_KI.md](docs/LOKALE_KI.md) | Optionale lokale KI: Modelle, Hardware, Einrichtung, Nur-lokal-Modus, Grenzen, ehrlicher Teststand |
 | [docs/FEHLENDE_VORLAGEN.md](docs/FEHLENDE_VORLAGEN.md) | Fehlendes Original, optionale Originale, Import im Vorlagen-Studio |
 | [docs/TESTBERICHT.md](docs/TESTBERICHT.md) | Testbericht |
 | [docs/BENCHMARK.md](docs/BENCHMARK.md) | Messungen zur Texterkennung |
